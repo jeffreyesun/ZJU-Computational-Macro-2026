@@ -1,0 +1,173 @@
+% !TEX program = xelatex
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+
+% Bilingual setup (XeLaTeX): Latin Modern for Latin script, Noto Sans CJK
+% SC for the Chinese passages.
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}
+\setCJKmainfont{Noto Sans CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+\title{Summer 2026 Syllabus \\
+       \normalsize\normalfont 2026 年夏季教学大纲}
+\author{Instructor: Jeffrey Sun \\
+        \texttt{je.sun@utoronto.ca}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Course Overview \\ 课程简介}
+
+We study computational methods for solving macroeconomic models with
+dynamics, heterogeneous agents, and varying assumptions about
+expectations. We will do so using practical projects in which we will
+define macroeconomic models and then solve them in the programming
+language Julia. Starting with a simple consumption-savings
+model of a single agent, we will build up to representative-agent
+general equilibrium models, then heterogeneous-agent general
+equilibrium models. Finally, we will cover the ``Continuation Value
+is All You Need'' (CVIAYN) method for solving heterogeneous-agent
+dynamic models with uncertainty, as in Sun (2026).
+
+\medskip
+
+我们研究求解宏观经济模型的计算方法，模型包含动态、异质性主体，以及对预期的不同假设。我们将通过实操项目进行：先定义宏观经济模型，再用编程语言 Julia 求解。从单一主体的简单消费--储蓄模型起步，逐步建立到代表性主体一般均衡模型，再到异质性主体一般均衡模型。最后，我们将介绍``续值即一切''（CVIAYN）方法，用于求解含不确定性的异质性主体动态模型，参见 Sun (2026)。
+
+\medskip
+
+The course will consist of ten daily two-hour workshop-style lectures
+over the course of two weeks.
+
+\medskip
+
+课程共十讲，每讲两小时，工作坊形式，分两周进行。
+
+\section*{Course Materials \\ 教学资料}
+
+No textbooks are required. I will provide code and lecture notes as
+the sole course materials.
+
+\medskip
+
+不指定教材。我将提供代码和讲义作为唯一的课程资料。
+
+\section*{Course Schedule \\ 课程安排}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{@{}p{0.18\textwidth} p{0.78\textwidth}@{}}
+\toprule
+\textbf{Lecture / 讲次} & \textbf{Description / 内容} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Lecture / 讲次} & \textbf{Description / 内容} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+\textbf{Lecture 1} \newline 第一讲 \newline May 11
+& \textbf{Introduction.} Housekeeping. Overview of course.
+  \textbf{Dynamic Modelling.} The consumption-savings problem in
+  recursive form. \newline
+  \textbf{导论。}事务说明。课程概览。\textbf{动态建模。}递归形式下的消费--储蓄问题。\\
+
+\textbf{Lecture 2} \newline 第二讲 \newline May 12
+& \textbf{Computation.} Introduction to Julia. Value function
+  iteration. \newline
+  \textbf{计算。}Julia 简介。价值函数迭代。\\
+
+\textbf{Lecture 3} \newline 第三讲 \newline May 13
+& \textbf{Heterogeneity.} Interpreting the grid-based solution to the
+  consumption-savings problem as a solution for heterogeneous
+  households. Solving the consumption-saving for agents who are
+  heterogeneous in dimensions other than wealth. \newline
+  \textbf{异质性。}把消费--储蓄问题的网格解读作一群异质性家庭的解。求解在财富以外维度上具有异质性的主体的消费--储蓄问题。\\
+
+\textbf{Lecture 4} \newline 第四讲 \newline May 14
+& \textbf{Equilibrium.} Heterogeneous Agents in Equilibrium: the
+  Aiyagari model. Defining dynamic recursive equilibrium. \newline
+  \textbf{均衡。}均衡中的异质性主体：Aiyagari 模型。动态递归均衡的定义。\\
+
+\textbf{Lecture 5} \newline 第五讲 \newline May 15
+& \textbf{Expectations.} Transition dynamics in the Aiyagari model. \newline
+  \textbf{预期。}Aiyagari 模型中的过渡动态。\\
+
+\textbf{Lecture 6} \newline 第六讲 \newline May 18
+& \textbf{Uncertainty.} The Krusell-Smith Model. \newline
+  \textbf{不确定性。}Krusell--Smith 模型。\\
+
+\textbf{Lecture 7} \newline 第七讲 \newline May 19
+& \textbf{Continuation Value is All You Need.} Solving the
+  Krusell-Smith Model using neural networks. \newline
+  \textbf{续值即一切。}用神经网络求解 Krusell--Smith 模型。\\
+
+\textbf{Lecture 8} \newline 第八讲 \newline May 20
+& \textbf{Richer Modelling.} The Stage Decomposition Method for
+  building complex economic models. \newline
+  \textbf{更丰富的建模。}用阶段分解方法构建复杂的经济模型。\\
+
+\textbf{Lecture 9} \newline 第九讲 \newline May 21
+& \textbf{Discrete Choice.} Incorporating discrete choice into a
+  stage-decomposed model. Spatial Modelling. \newline
+  \textbf{离散选择。}在阶段分解模型中加入离散选择。空间建模。\\
+
+\textbf{Lecture 10} \newline 第十讲 \newline May 22
+& \textbf{Final Steps.} Overview of applications. Discussion of
+  estimation. \newline
+  \textbf{收官。}应用综览。关于估计的讨论。\\
+
+\end{longtable}
+
+\section*{Policies \& Statements \\ 政策与声明}
+
+\subsection*{Recording Lectures (by Student) \\ 学生录制讲课}
+
+Students wishing to record lectures or other course material in any
+way are required to ask the instructor's explicit permission and may
+not do so unless permission is granted. This includes audio and video
+recording and photographing slides or other course materials.
+
+\medskip
+
+如以任何方式录制课程或其他课程材料，须事先取得授课教师的明确许可；未获许可不得录制。这包括音频与视频录制，以及对幻灯片或其他课程材料的拍照。
+
+\medskip
+
+Granting permission to record applies only for that individual
+student's own study purposes and does not include permission to
+``publish'' or distribute them in any way. It is forbidden for a
+student to publish an instructor's notes on a website or to sell them
+in other form without formal permission.
+
+\medskip
+
+获准录制仅适用于学生个人的学习目的，不包含以任何方式``发布''或传播的许可。学生不得将教师讲义发布到网站，或以其他形式出售，未经正式许可不得为之。
+
+\subsection*{Equity, Diversity and Inclusion \\ 公平、多元与包容}
+
+I am committed to equity and respect for diversity. All members of
+the learning environment in this course should strive to create an
+atmosphere of mutual respect where all members of our community can
+express themselves, engage with each other, and respect one another's
+differences. I do not condone discrimination or harassment against
+any persons or communities.
+
+\medskip
+
+我致力于推动公平并尊重多元。本课程学习环境中的每位成员都应努力营造相互尊重的氛围，使我们这个社区的所有成员都能表达自己、彼此交流，并尊重彼此的差异。我不容忍任何针对个人或群体的歧视或骚扰行为。
+
+\end{document}
