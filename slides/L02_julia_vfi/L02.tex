@@ -1,0 +1,512 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+% Bilingual support (XeLaTeX), matching L01.
+\usepackage{fontspec}
+\usepackage{xeCJK}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+% DejaVu Sans Mono (not Latin Modern Mono) for the monospace face because
+% LM Mono lacks Greek glyphs — β/γ inside lstlisting and \texttt{} were
+% silently dropped before this change.
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+\setCJKmainfont{Noto Sans CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+% Tighter code listings — the bilingual columns plus the navigation header
+% bar make footnotesize too tall on several frames in this deck.
+\lstset{basicstyle=\ttfamily\scriptsize}
+
+\title{Lecture 2: Computation --- Julia and VFI \\ {\large 第二讲：计算 --- Julia 与价值函数迭代}}
+\subtitle{Computational Methods for Heterogeneous-Agent Macro \\ {\large 异质性主体宏观的计算方法}}
+\author{Jeffrey Sun}
+\institute{University of Toronto}
+\date{May 12, 2026}
+
+\begin{document}
+
+\maketitle
+
+
+% =============================================================
+\section{Recap / 回顾}
+% =============================================================
+
+\begin{frame}{Bellman Equation \\ 贝尔曼方程}
+\[
+  \boxed{\;
+    V(b, w) \;=\; \max_{c \in [0, b]} \; u(c)
+      + \beta \, \E\!\left[\, V(R(b-c) + w',\, w') \,\big|\, w \,\right]\quad\forall b,w
+  \;}
+\]
+This equation characterizes the function $V$ that is needed to solve the household's problem. / 此方程刻画了求解家庭问题所需的函数 $V$。
+
+\end{frame}
+
+\begin{frame}{$V$ is Unique and Computable \\ $V$ 唯一且可计算}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+For any bounded $v_1, v_2$,
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+对任意有界的 $v_1, v_2$：
+\end{column}
+\end{columns}
+\[
+  \norm{\mathcal{T} v_1 - \mathcal{T} v_2}_\infty
+    \;\le\; \beta \, \norm{v_1 - v_2}_\infty.
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  Informally, the Banach fixed-point theorem implies:
+  \begin{itemize}
+    \item A unique $V^*$ exists that satisfies $V^* = \mathcal{T} V^*$.
+    \item Value function iteration will always find $V^*$.
+  \end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  非正式地，Banach 不动点定理意味着：
+  \begin{itemize}
+    \item 存在唯一的 $V^*$ 满足 $V^* = \mathcal{T} V^*$。
+    \item 价值函数迭代总能找到 $V^*$。
+  \end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Today \\ 今天}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item Replace the continuous state $b$ with a finite grid.
+  \vspace{0.4em}
+  \item Code $\mathcal{T}$ as a Julia function.
+  \vspace{0.4em}
+  \item Iterate $v_{k+1} = \mathcal{T} v_k$ until $\norm{v_{k+1} - v_k}_\infty < \text{tol}$.
+  \vspace{0.4em}
+  \item Plot $V$.
+\end{enumerate}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item 把连续状态 $b$ 换成有限网格。
+  \vspace{0.4em}
+  \item 用 Julia 写出 $\mathcal{T}$。
+  \vspace{0.4em}
+  \item 迭代 $v_{k+1} = \mathcal{T} v_k$，直到 $\norm{v_{k+1} - v_k}_\infty < \text{tol}$。
+  \vspace{0.4em}
+  \item 画出 $V$。
+\end{enumerate}
+\end{column}
+\end{columns}
+\end{frame}
+
+% =============================================================
+\section{Julia}
+% =============================================================
+
+\begin{frame}[fragile]{Topic 1: Values and types \\ 主题一：值与类型}
+\begin{lstlisting}
+β = 0.96             # bound a value to a name
+typeof(β)            # Float64
+typeof(2)            # Int64
+typeof("hello")      # String
+\end{lstlisting}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Unicode names are valid. $\beta$ is a Float64, $2$ is an Int64.
+
+\vspace{0.4em}
+
+Every value has a concrete \textbf{type}.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+变量名可以用 Unicode。$\beta$ 是 Float64，$2$ 是 Int64。
+
+\vspace{0.4em}
+
+每个值都有具体的\textbf{类型}。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Topic 2: Arrays \\ 主题二：数组}
+\begin{lstlisting}
+xs  = [1.0, 2.0, 3.0]      # Vector{Float64}, length 3
+M   = [1 2; 3 4]           # Matrix{Int64}, 2×2
+zs  = zeros(3, 4)          # 3×4 matrix of 0.0
+xs[1]                      # 1.0   --- 1-indexed!
+M[2, 1]                    # 3
+\end{lstlisting}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Indexing starts at 1.}
+
+\vspace{0.4em}
+
+\texttt{xs[end]} is the last element. \texttt{xs[2:3]} is a slice.
+
+\vspace{0.4em}
+
+Arrays are column-major: dimension 1 is the row, dimension 2 is the column. A ``vector'' is a column vector.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{下标从 1 开始}。
+
+\vspace{0.4em}
+
+\texttt{xs[end]} 是最后一个元素，\texttt{xs[2:3]} 是切片。
+
+\vspace{0.4em}
+
+数组按\emph{列}主序存储：第一维是行，第二维是列。所谓``向量''就是列向量。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Topic 2: Broadcasting \\ 主题二：广播}
+\begin{lstlisting}
+xs = [1.0, 2.0, 3.0]
+
+xs .+ 10          # [11.0, 12.0, 13.0]
+log.(xs)          # [0.0, 0.693, 1.099]
+xs .^ 2           # [1.0, 4.0, 9.0]
+
+# elementwise on two arrays of the same shape:
+[1,2,3] .* [10,20,30]   # [10, 40, 90]
+\end{lstlisting}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+The dot \texttt{.} is the ``elementwise'' marker. It applies any function elementwise --- no need to write a loop.
+
+\vspace{0.4em}
+
+You'll see \texttt{f.(xs)} everywhere.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+点号 \texttt{.} 是``按元素''标记，可以让任何函数逐元素作用——不用写循环。
+
+\vspace{0.4em}
+
+代码中 \texttt{f.(xs)} 比比皆是。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Topic 3: Functions \\ 主题三：函数}
+\begin{lstlisting}
+function utility(c)
+    c <= 0 && return -Inf
+    return log(c)
+end
+
+# shorthand for simple conditionals:
+function utility(c)
+    return c <= 0 ? -Inf : log(c)
+end
+
+# one-line functions equally valid:
+u(c) = c <= 0 ? -Inf : log(c)
+\end{lstlisting}
+\end{frame}
+
+
+% =============================================================
+\section{Discretization / 离散化问题}
+% =============================================================
+
+\begin{frame}{Discrete Wealth Grid \\ 离散财富网格}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+$V$ is a function on $[0, \infty) \times W$. We can't represent it exactly.
+
+\vspace{0.6em}
+
+Pick $N$ wealth values $b_1 < b_2 < \cdots < b_N$.
+
+\vspace{0.6em}
+
+Represent $V$ as the vector $[V(b_1), \ldots, V(b_N)]$.
+
+\vspace{0.6em}
+
+This makes the function finite-dimensional.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+$V$ 是 $[0, \infty) \times W$ 上的函数，无法精确表示。
+
+\vspace{0.6em}
+
+选 $N$ 个财富点 $b_1 < b_2 < \cdots < b_N$。
+
+\vspace{0.6em}
+
+将 $V$ 表示为向量 $[V(b_1), \ldots, V(b_N)]$。
+
+\vspace{0.6em}
+
+函数从此变成有限维对象。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Linear vs Log Spacing \\ 线性等距 vs 对数等距}
+\begin{lstlisting}
+loggrid(lo, hi, N) = exp.(range(log(lo), log(hi); length=N))
+
+# linear: equally spaced
+b_grid = collect(range(0.1, 20.0; length=200))
+
+# log: denser near the borrowing constraint
+b_grid = loggrid(0.1, 20.0, 200)
+\end{lstlisting}
+
+\footnotesize
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+The policy function is more nonlinear for small $b$, so we use log spacing to put more grid points on smaller $b$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+策略函数在 $b$ 较小处更加非线性，因此采用对数等距，把更多网格点放在较小的 $b$ 上。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Utility \\ 效用}
+\begin{lstlisting}
+u(c) = c <= 0 ? -Inf : log(c)
+\end{lstlisting}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+
+Generalized version is CRRA with $\gamma$, but keep it simple for now.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+
+推广形式是含 $\gamma$ 的 CRRA，今天先保持简单。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Bellman Operator $\mathcal{T}$ as a Julia Function \\ 贝尔曼算子 $\mathcal{T}$ 的 Julia 实现}
+\begin{lstlisting}
+function bellman_operator(V, params)
+    (; β, R, y, b_grid) = params
+
+    # end-of-period wealth needed to reach each b' on the grid
+    b_end = (b_grid' .- y) ./ R
+
+    # u(c) + β V(b') for every (b, b'); take max over b'
+    return maximum(u.(b_grid .- b_end) .+ β .* V'; dims = 2)
+end
+\end{lstlisting}
+
+\footnotesize
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  \texttt{b\_grid} is a column vector. \texttt{b\_grid'} is a row vector. Each row corresponds to a $b$ value; each column to a $b'$ value. The last line takes \texttt{max} \textbf{within} each $b$ (rows), \textbf{across} $b'$ (columns).
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  \texttt{b\_grid} 是列向量，\texttt{b\_grid'} 是行向量。每一行对应一个 $b$ 值，每一列对应一个 $b'$ 值。最后一行在每个 $b$ 内\textbf{（行内）}、跨所有 $b'$ \textbf{（列间）}取最大。
+\end{column}
+\end{columns}
+\end{frame}
+
+
+% =============================================================
+\section{Value Function Iteration / 价值函数迭代}
+% =============================================================
+
+\begin{frame}{Value Function Iteration \\ 价值函数迭代}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item Start with $V_0 \equiv 0$ (any initial guess works).
+  \vspace{0.4em}
+  \item $V_{k+1} \leftarrow \mathcal{T} V_k$.
+  \vspace{0.4em}
+  \item Stop when $\norm{V_{k+1} - V_k}_\infty < \text{tol}$.
+\end{enumerate}
+
+\vspace{0.6em}
+
+Banach theorem $\Rightarrow$ algorithm converges to true $V^*$ at rate $\beta$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item 从 $V_0 \equiv 0$ 开始（任意初值都行）。
+  \vspace{0.4em}
+  \item $V_{k+1} \leftarrow \mathcal{T} V_k$。
+  \vspace{0.4em}
+  \item 当 $\norm{V_{k+1} - V_k}_\infty < \text{tol}$ 时停。
+\end{enumerate}
+
+\vspace{0.6em}
+
+由 Banach 不动点定理 $\Rightarrow$ 算法以速率 $\beta$ 收敛到真实的 $V^*$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{solve\_vfi} / 求解函数}
+\begin{lstlisting}
+function solve_vfi(params; tol = 1e-6, maxiter = 2000, verbosity = 0)
+    V = zeros(size(params.b_grid))
+
+    Δ, iters = Inf, 0
+    while Δ >= tol
+        TV = bellman_operator(V, params)
+        Δ  = maximum(abs.(TV .- V))
+        V  = TV
+        iters += 1
+        iters > maxiter && error("VFI did not converge in $maxiter iterations")
+    end
+
+    verbosity >= 1 && println("VFI converged in $iters iterations with error $Δ")
+    return V
+end
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{Baseline Calibration \\ 基准参数}
+\begin{lstlisting}
+b_grid = loggrid(0.05, 40.0, 400)
+params = (; β = 0.96, R = 1.04, y = 1.0, b_grid)
+
+V = solve_vfi(params; verbosity = 1)
+\end{lstlisting}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\small $\beta R < 1$, otherwise $V^*$ is infinite.
+
+\vspace{0.3em}
+
+Grid: 400 log-spaced points from $0.05$ to $40$.
+
+\vspace{0.3em}
+
+\texttt{params} is a \texttt{NamedTuple} (named tuple). The last \texttt{b\_grid} is equivalent to \texttt{b\_grid = b\_grid}.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\small $\beta R < 1$，否则 $V^*$ 无界。
+
+\vspace{0.3em}
+
+网格：从 $0.05$ 到 $40$ 的 400 个对数等距点。
+
+\vspace{0.3em}
+
+\texttt{params} 是一个 \texttt{NamedTuple}（具名元组）。末尾的 \texttt{b\_grid} 等价于 \texttt{b\_grid = b\_grid}。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Features of Value Function \\ 价值函数的性质}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+$V(b)$ is increasing because more wealth never hurts.
+
+\vspace{0.4em}
+
+$V(b)$ is concave: an additional unit of wealth is worth more to the poor than to the rich.
+
+\vspace{0.4em}
+
+The slope is the \textbf{marginal value of wealth}: $V'(b) = u'(c^\star(b))$ by the envelope theorem.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+$V(b)$ 递增：财富越多绝不会更糟。
+
+\vspace{0.4em}
+
+$V(b)$ 凹：多一单位财富对穷人比对富人更有价值。
+
+\vspace{0.4em}
+
+斜率即\textbf{财富的边际价值}：由包络定理，$V'(b) = u'(c^\star(b))$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Recap \\ 回顾}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+$V$ is now a \textbf{vector} we can examine, not just an abstract symbol.
+
+\vspace{0.6em}
+
+We have:
+\begin{itemize}
+  \item a small Julia toolbox (values, arrays, broadcasting, functions)
+  \item \texttt{bellman\_operator} that codes $\mathcal{T}$ in a few broadcast lines
+  \item \texttt{solve\_vfi} that iterates to the fixed point
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+$V$ 现在是一个可以查看的\textbf{向量}，不再只是抽象符号。
+
+\vspace{0.6em}
+
+我们已经有：
+\begin{itemize}
+  \item 一个小型 Julia 工具集（值、数组、广播、函数）
+  \item 用几行广播实现 $\mathcal{T}$ 的 \texttt{bellman\_operator}
+  \item 迭代到不动点的 \texttt{solve\_vfi}
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Tomorrow: Heterogeneity \\ 明天：异质性}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Add an income shock, state grows from $b$ to $(b, w)$.
+
+\vspace{0.6em}
+
+Heterogeneity: We can think of each $(b, w)$ state as a different \textbf{type} of households
+
+Different $b$: rich vs. poor
+
+Different $w$: high vs. low
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+加入一个收入冲击，状态从 $b$ 变为 $(b, w)$。
+
+\vspace{0.6em}
+
+异质性：可以把每个 $(b, w)$ 状态看作一种不同\textbf{类型}的家庭。
+
+不同的 $b$：富 vs.\ 穷
+
+不同的 $w$：高 vs.\ 低
+\end{column}
+\end{columns}
+\end{frame}
+
+\end{document}

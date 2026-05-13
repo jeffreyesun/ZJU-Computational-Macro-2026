@@ -1,0 +1,1106 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+% Bilingual support for L01 (XeLaTeX only). Other decks keep using pdflatex.
+\usepackage{fontspec}
+\usepackage{xeCJK}
+
+% Override Metropolis's Fira default — use Computer Modern (Latin Modern under
+% XeLaTeX) so the deck compiles deterministically without Fira installed.
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}
+
+\setCJKmainfont{Noto Sans CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+\title{Lecture 1: Introduction and Dynamic Modelling \\ {\large 第一讲：导论与动态建模}}
+\subtitle{Computational Methods for Heterogeneous-Agent Macro \\ {\large 异质性主体宏观的计算方法}}
+\author{Jeffrey Sun}
+\institute{University of Toronto}
+\date{May 11, 2026}
+
+\begin{document}
+
+
+\maketitle
+
+% =============================================================
+\section{Welcome / 欢迎}
+% =============================================================
+
+\begin{frame}{Goal of This Course \\ 本课程目标}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  Solving heterogeneous-agent GE models with aggregate shocks in Julia.
+
+  \vspace{1.2em}
+
+  First half: Standard (with some suggestive notational decisions)
+
+  Second half: My own research
+
+  \vspace{1.2em}
+
+  Every solution will be based on the \textbf{Bellman equation}.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  在 Julia 中求解带总量冲击的异质性主体一般均衡模型。
+
+  \vspace{1.2em}
+
+  前半部分：标准内容（含一些有启发性的记号选择）
+
+  后半部分：我自己的研究
+
+  \vspace{1.2em}
+
+  所有求解都基于\textbf{贝尔曼方程}。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Heterogeneous Agents: Motivation 1 \\ 异质性主体：动机一}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  Empirically, average marginal propensity to consume (MPC) is high, but average savings is also high.
+
+  A representative agent would not act like this. So a representative-agent model cannot explain this.
+
+  However, if poor households have high MPC/low saving, and rich households have low MPC/high saving, then a \textbf{heterogeneous-agent} model can explain.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  经验上，平均边际消费倾向 (MPC) 很高，但平均储蓄也很高。
+
+  代表性主体不会这样行动。所以代表性主体模型无法解释这一现象。
+
+  但若贫穷家庭具有高 MPC、低储蓄，富裕家庭具有低 MPC、高储蓄，则\textbf{异质性主体}模型可以解释。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Heterogeneous Agents: Motivation 2 \\ 异质性主体：动机二}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  A change in (e.g. interest rate) policy will affect different people \textbf{differently}.
+
+  A policy will have different \textbf{aggregate} effects depending on who it targets.
+
+  We care about the distributional and aggregate consequences of policy.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  一项（例如利率）政策的变化会对不同的人产生\textbf{不同的}影响。
+
+  一项政策的\textbf{总量}效应取决于它针对的是谁。
+
+  我们关心政策的分布效应和总量后果。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Schedule / 日程}
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+& \textbf{English} & \textbf{中文} \\
+\midrule
+Lecture 1  & Introduction \& dynamic modelling     & 导论与动态建模 \\
+Lecture 2  & Julia. Value function iteration       & Julia. 价值函数迭代 \\
+Lecture 3  & Heterogeneity beyond wealth           & 财富之外的异质性 \\
+Lecture 4  & Equilibrium. Aiyagari                 & 均衡。Aiyagari \\
+Lecture 5  & Aiyagari transitions                  & Aiyagari 过渡动态 \\
+Lecture 6  & Uncertainty. Krusell--Smith           & 不确定性。Krusell--Smith \\
+Lecture 7  & \textbf{CVIAYN}                       & \textbf{续值即一切} \\
+Lecture 8  & Stage decomposition                   & 阶段分解 \\
+Lecture 9  & Discrete choice. Spatial              & 离散选择。空间模型 \\
+Lecture 10 & Applications. Estimation              & 应用。估计 \\
+\bottomrule
+\end{tabular}
+\end{frame}
+
+\begin{frame}{Practicalities \\ 实务}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Each lecture has a paired Jupyter notebook.
+  \vspace{0.6em}
+  \item Please stop me if you have any questions!
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 每讲都配有一个 Jupyter 笔记本。
+  \vspace{0.6em}
+  \item 有问题请随时打断我！
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+% =============================================================
+\section{Household Problem / 家庭问题}
+% =============================================================
+
+\begin{frame}{Microfoundation: One Household \\ 微观基础：单一家庭}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+
+  Macroeconomics is the study of how individual behaviour shapes aggregate outcomes.
+
+  To understand the origins of macro outcomes, need to study the sources of individual behaviour.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+宏观经济学研究的是个体行为如何塑造总量结果。
+
+要理解宏观结果的来源，就需要研究个体行为的成因。
+\end{column}
+\end{columns}
+\end{frame}
+
+\subsection{Two Periods / 两期}
+
+\begin{frame}{Two Period Model \\ 两期模型}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  Household starts with \textbf{wealth} $b_0$ in Period 0. In Period 1, they receive income $w_1$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  家庭在第 0 期持有\textbf{财富} $b_0$。第 1 期获得收入 $w_1$。
+\end{column}
+\end{columns}
+
+  \[
+    \max_{c_0, c_1 \ge 0} \; u(c_0) + \beta u(c_1)
+    \quad\text{s.t.}\quad
+    c_0 + \tfrac{c_1}{R} \le \overline{W}.
+  \]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  Where $\overline{W} = b_0 + w_1/R$ is \textbf{lifetime resources}.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  其中 $\overline{W} = b_0 + w_1/R$ 是\textbf{终生资源}。
+\end{column}
+\end{columns}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+If you save \$1 today, you can spend \$$R$ tomorrow, but utility discounted by $\beta$.
+
+\vspace{0.5em}
+
+Lagrangian: $\mathcal{L} = u(c_0) + \beta u(c_1) - \lambda(c_0 + c_1/R - \overline{W})$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+若今天储蓄 \$1，明天可消费 \$$R$，但效用按 $\beta$ 折现。
+
+\vspace{0.5em}
+
+拉格朗日量：$\mathcal{L} = u(c_0) + \beta u(c_1) - \lambda(c_0 + c_1/R - \overline{W})$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Euler Equation \\ 欧拉方程}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Lagrangian FOCs: $u'(c_0) = \lambda$, $\beta u'(c_1) = \lambda/R$. Rearranging,
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+拉格朗日一阶条件：$u'(c_0) = \lambda$，$\beta u'(c_1) = \lambda/R$。整理得：
+\end{column}
+\end{columns}
+\[
+  \boxed{\frac{u'(c_0)}{u'(c_1)} = \beta R.}
+\]
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\vspace{0.5em}
+
+At optimum, on margin, \textbf{indifferent} between consuming or saving one unit today for $R$ units tomorrow.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\vspace{0.5em}
+
+在最优处，边际上对今天消费一单位、或储蓄换取明天 $R$ 单位\textbf{无差异}。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Example: Analytical Solution with Log Utility \\ 例：对数效用下的解析解}
+$u = \log c$ \;$\Rightarrow$\; $c_1 = \beta R c_0$ \;$\Rightarrow$
+\[
+  c_0^\star = \frac{\overline{W}}{1+\beta},
+  \qquad
+  c_1^\star = \frac{\beta R \, \overline{W}}{1+\beta}.
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+With $\beta = 0.96$, $R = 1.04$, $b_0 = 10$, $w_1 = 2$:
+\[
+  c_0^\star \approx 6.08, \;\; c_1^\star \approx 6.07.
+\]
+
+\vspace{0.3em}
+
+Bumpy income $(10, 2)$ \;$\Rightarrow$\; smooth consumption $(6.08, 6.07)$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+取 $\beta = 0.96$，$R = 1.04$，$b_0 = 10$，$w_1 = 2$：
+\[
+  c_0^\star \approx 6.08, \;\; c_1^\star \approx 6.07.
+\]
+
+\vspace{0.3em}
+
+不平的收入 $(10, 2)$ \;$\Rightarrow$\; 平滑的消费 $(6.08, 6.07)$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Policy Function \\ 策略函数}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  The \textbf{Policy Function} represents optimal period-0 consumption in terms of \textbf{initial wealth} $b_0$:
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  \textbf{策略函数}用\textbf{初始财富} $b_0$ 表示第 0 期的最优消费：
+\end{column}
+\end{columns}
+\[
+  c_0^\star(b_0) = \frac{b_0 + w_1/R}{1+\beta}.
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+This way, we have a model of household behaviour, and \textbf{how} household behaviour \textbf{arises}.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+这样我们就得到了一个家庭行为的模型，以及家庭行为\textbf{是如何产生}的。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Preferences \\ 偏好}
+\small
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  Standard utility:
+  \[
+    u(c) = \frac{c^{1-\gamma}-1}{1-\gamma}, \quad \gamma > 0.
+  \]
+
+  Utility \textbf{increasing} in $c$:
+  \[
+    \frac{\partial u(c)}{\partial c} = c^{-\gamma} > 0.
+  \]
+
+  \textbf{Marginal} utility \textbf{decreasing}:
+  \[
+    \frac{\partial^2 u(c)}{\partial c^2} = -\gamma c^{-\gamma-1} < 0.
+  \]
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  标准效用函数：
+  \[
+    u(c) = \frac{c^{1-\gamma}-1}{1-\gamma}, \quad \gamma > 0.
+  \]
+
+  效用随 $c$ \textbf{递增}：
+  \[
+    \frac{\partial u(c)}{\partial c} = c^{-\gamma} > 0.
+  \]
+
+  \textbf{边际}效用\textbf{递减}：
+  \[
+    \frac{\partial^2 u(c)}{\partial c^2} = -\gamma c^{-\gamma-1} < 0.
+  \]
+\end{column}
+\end{columns}
+\end{frame}
+
+\subsection{$T$-Period Model / $T$ 期模型}
+
+\begin{frame}{$T$ Period Model \\ $T$ 期模型}
+\[
+  \max_{c_0, \ldots, c_{T-1}} \sum_{t=0}^{T-1} \beta^t u(c_t),
+  \quad b_{t+1} = R(b_t - c_t) + w_{t+1}.
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Solving Lagrangian gives us $T-1$ Euler equations,
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+求解拉格朗日量给出 $T-1$ 个欧拉方程：
+\end{column}
+\end{columns}
+\[
+  u'(c_t) = \beta R \, u'(c_{t+1}).
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+This is already 80 equations in 80 unknowns!
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+这已经是 80 个方程、80 个未知量！
+\end{column}
+\end{columns}
+\end{frame}
+
+\subsection{$T$-period stochastic model / $T$ 期随机模型}
+
+\begin{frame}{Stochastic Income \\ 随机收入}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Suppose $\{w_t\}$ follows a Markov chain with transition matrix $\Pi$.
+
+\vspace{0.6em}
+
+Given today's $w_t$, we only know the \emph{distribution} of $w_{t+1}$, not the value.
+
+\vspace{0.6em}
+
+At every time $t$, household chooses $c_t$ without knowing $w_{t+1}$.
+
+\vspace{0.6em}
+
+So what's the policy function? $c_t$ is a function of $t$ variables! That is, $c_t(w_0, \ldots, w_t)$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+设 $\{w_t\}$ 服从转移矩阵为 $\Pi$ 的马尔可夫链。
+
+\vspace{0.6em}
+
+给定今天的 $w_t$，我们只知道 $w_{t+1}$ 的\emph{分布}，而不知道具体取值。
+
+\vspace{0.6em}
+
+在每个时刻 $t$，家庭在不知道 $w_{t+1}$ 的情况下选择 $c_t$。
+
+\vspace{0.6em}
+
+那么策略函数是什么？$c_t$ 是 $t$ 个变量的函数！即 $c_t(w_0, \ldots, w_t)$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Stochastic Euler Equation \\ 随机欧拉方程}
+With $T = 2$, substitute / 取 $T=2$ 代入：
+\[
+  c_1 = R(b_0 - c_0) + w_1.
+\]
+Then / 于是：
+\[
+  \max_{c_0} \; u(c_0) + \beta \, \E\!\left[\, u\!\left(R(b_0 - c_0) + w_1\right) \,\right].
+\]
+FOC with respect to $c_0$ / 对 $c_0$ 的一阶条件：
+\[
+  \boxed{\;u'(c_0) \;=\; \beta R \, \E\!\left[\, u'(c_1) \,\right].\;}
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\small The Euler equation now carries an expectation: saves against an \emph{uncertain} $c_1$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\small 欧拉方程现在带期望：对\emph{不确定}的 $c_1$ 储蓄对冲。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Infinite-Horizon Problem ($T = \infty$) \\ 无限期问题 ($T = \infty$)}
+With $T = \infty$, the household / 当 $T = \infty$ 时，家庭：
+\[
+  \max \; \E_0 \sum_{t=0}^{\infty} \beta^t u(c_t),
+  \quad
+  \text{s.t.}\quad b_{t+1} = R(b_t - c_t) + w_{t+1}.
+\]
+Specifically, must find the best \textbf{policy functions} / 具体地，需找到最优\textbf{策略函数}：
+\[
+  c_t = c_t(w_0, \ldots, w_t) \quad \forall t.
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\small There are infinitely-many possible decision rules, so we need to approach the problem differently.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\small 可能的决策规则有无穷多种，所以我们需要换一种思路。
+\end{column}
+\end{columns}
+\end{frame}
+
+% =============================================================
+\section{Recursive Form / 递归形式}
+% =============================================================
+
+\begin{frame}{Richard Bellman's First Observation \\ Bellman 的第一个观察}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+At each time $t$, household only makes one choice, then waits,
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+在每个时刻 $t$，家庭只做一个选择，然后等待：
+\end{column}
+\end{columns}
+\[
+  \max_{c_t} = u(c_t) + \beta \E_t\left[ \max \E_{t+1}\sum_{s=t+1}^\infty \beta^t u(c_s) \right]
+\]
+\[
+  s.t. \quad b_{s+1} = R(b_s - c_s) + w_{s+1} \quad\forall s \ge t.
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Importantly, the problem at time $t$ looks almost identical to the problem at time $t+1$.
+
+The only possible differences are $b_t$ and $w_t$. These are the \textbf{state variables.}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+关键是：$t$ 时刻的问题与 $t+1$ 时刻的问题几乎一模一样。
+
+唯一可能的差别是 $b_t$ 和 $w_t$。它们就是\textbf{状态变量}。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{State Variables \\ 状态变量}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+In a recursive model, \textbf{state variables} are the only variables that make time periods (and decisions) \textbf{different from each other.}
+
+Here, the state is $(b, w)$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+在递归模型中，\textbf{状态变量}是唯一使得各时期（及其决策）\textbf{相互不同}的变量。
+
+这里，状态是 $(b, w)$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Richard Bellman's Second Observation \\ Bellman 的第二个观察}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  Richard Bellman realized two things:
+  \begin{enumerate}
+    \item You can express his insight as an equation about a \textbf{value function} $V$.
+    \item If you know the \textbf{value function}, you can compute the \textbf{policy function} and (numerically) solve the entire model.
+  \end{enumerate}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  Bellman 意识到两件事：
+  \begin{enumerate}
+    \item 他的洞见可以表达为关于\textbf{价值函数} $V$ 的一个方程。
+    \item 若知道\textbf{价值函数}，就可以计算出\textbf{策略函数}，并（数值地）求解整个模型。
+  \end{enumerate}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Value Function and Bellman Equation \\ 价值函数与贝尔曼方程}
+\small Define the \emph{value function} $V(b, w)$ as the \textbf{net present value} of state $(b, w)$. / 定义\emph{价值函数} $V(b, w)$ 为状态 $(b, w)$ 的\textbf{净现值}：
+  \begin{align*}
+    V(b_t,w_t) &= \max_{c_t\in[0,b_t]} \mathbb{E}_t \sum_{s=t}^\infty \beta^{s-t} u(c_s)\\
+    \text{s.t.} \quad b_{s+1} &= R(b_s - c_s) + w_{s+1} \forall s.
+  \end{align*}
+Then $V$ satisfies the \textbf{Bellman equation} / 则 $V$ 满足\textbf{贝尔曼方程}：
+\[
+  \boxed{V(b, w) = \max_{c \in [0, b]} \; u(c) + \beta \, \E\!\left[\, V(b', w') \,\big|\, w \,\right]}
+\]
+where $b' = R(b-c) + w'$ / 其中 $b' = R(b-c) + w'$。
+\end{frame}
+
+\begin{frame}{The Value Function Is All You Need \\ 价值函数即一切}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  If we know $V$, then we can compute the \textbf{policy function} and solve the whole model,
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  若我们知道 $V$，就可以计算\textbf{策略函数}并求解整个模型：
+\end{column}
+\end{columns}
+  \[
+  c^\star(b, w) = \arg\max_{c \in [0, b]} u(c) + \beta \, \E\!\left[\, V(R(b-c) + w,\, w') \mid w \,\right].
+  \]
+\end{frame}
+
+\begin{frame}{How do we find $V$? \\ 如何求 $V$？}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  We still have a problem, though. We don't just need to find a number. We need to find an entire \textbf{function} $V$.
+
+  Idea: Think about what would happen if we got the value function \textbf{wrong}.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+不过我们还有一个问题。我们要找的不只是一个数，而是一个完整的\textbf{函数} $V$。
+
+思路：想一想如果把价值函数\textbf{猜错}了会怎样。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The Bellman operator on arbitrary $v$ \\ 作用在任意 $v$ 上的贝尔曼算子}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  Suppose that we guess a \textbf{function} $v$. Even if we got that function \textbf{wrong}, this would still predict some policy,
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  设我们猜一个\textbf{函数} $v$。即便\textbf{猜错}，它仍然会给出某个策略：
+\end{column}
+\end{columns}
+  \[
+  c(b,w; v) = \arg\max_{c \in [0, b]} u(c) + \beta \, \E\!\left[\, v(R(b-c) + w',\, w') \mid w \,\right].
+  \]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+  If we use $v$ to \textbf{look ahead}, we can get a \textbf{different function} $\mathcal{T}v$,
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+  若用 $v$ 去\textbf{前瞻}，可以得到一个\textbf{不同的函数} $\mathcal{T}v$：
+\end{column}
+\end{columns}
+\[
+  (\mathcal{T} v)(b, w) \;:=\; \max_{c \in [0, b]} \; u(c) + \beta \, \E\!\left[\, v(R(b-c) + w',\, w') \,\big|\, w \,\right].
+\]
+\end{frame}
+
+\begin{frame}{The Lookahead Operator \\ 前瞻算子}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Idea: Think of $\mathcal{T}$ as an \textbf{operator} that maps a \textbf{function} to a \textbf{function}: $v \mapsto \mathcal{T}v$.
+
+This is the \textbf{Lookahead Operator}
+
+\vspace{0.6em}
+
+Read $\mathcal{T}v$ as: ``if $v$ were the value-from-tomorrow-on, this is what the value-today would be.''
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+思路：把 $\mathcal{T}$ 看作把\textbf{函数}映到\textbf{函数}的\textbf{算子}：$v \mapsto \mathcal{T}v$。
+
+这就是\textbf{前瞻算子}（Lookahead Operator）。
+
+\vspace{0.6em}
+
+$\mathcal{T}v$ 读作：``若 $v$ 代表明天起的价值，那么今天的价值就是这个''。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{$V$ is the fixed point of $\mathcal{T}$ \\ $V$ 是 $\mathcal{T}$ 的不动点}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+The Bellman relation, restated:
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+将贝尔曼关系重述为：
+\end{column}
+\end{columns}
+\[
+  \boxed{\; V \;=\; \mathcal{T} V. \;}
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+The true value function is a fixed point of $\mathcal{T}$.
+
+\vspace{0.6em}
+
+So solving the household's problem reduces to: \emph{find a fixed point of $\mathcal{T}$}.
+
+\vspace{0.6em}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+真实的价值函数是 $\mathcal{T}$ 的一个不动点。
+
+\vspace{0.6em}
+
+于是求解家庭问题就归结为：\emph{求 $\mathcal{T}$ 的一个不动点}。
+
+\vspace{0.6em}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Existence and uniqueness \\ 存在性与唯一性}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Under mild conditions, $\mathcal{T}$ is a contraction:
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+在温和的条件下，$\mathcal{T}$ 是一个压缩映射：
+\end{column}
+\end{columns}
+\[
+  \norm{\mathcal{T} v_1 - \mathcal{T} v_2}_\infty
+    \le \beta \norm{v_1 - v_2}_\infty.
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Banach: a unique fixed point $V^\star$ exists.
+
+\vspace{0.4em}
+
+Iterating $v_{k+1} = \mathcal{T} v_k$ from any starting $v_0$ converges to $V^\star$ at rate $\beta$.
+
+\vspace{0.6em}
+
+\small That's also next week's algorithm.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+Banach 不动点定理：存在唯一的不动点 $V^\star$。
+
+\vspace{0.4em}
+
+从任意 $v_0$ 出发迭代 $v_{k+1} = \mathcal{T} v_k$，以速率 $\beta$ 收敛到 $V^\star$。
+
+\vspace{0.6em}
+
+\small 这也是下周的算法。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{One equation to take home \\ 带走的一条方程}
+\[
+  \boxed{\;
+    V(b, w) \;=\; \max_{c \in [0, b]} \; u(c)
+      + \beta \, \E\!\left[\, V(R(b-c) + w',\, w') \,\big|\, w \,\right].
+  \;}
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+State: $(b, w)$. Unknown: $V$.
+
+\vspace{0.5em}
+
+Everything in the rest of the course is a variation on this.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+状态：$(b, w)$。未知量：$V$。
+
+\vspace{0.5em}
+
+本课程余下的一切，都是它的变体。
+\end{column}
+\end{columns}
+\end{frame}
+
+% =============================================================
+\section{From one household to a population / 从单一家庭到总体分布}
+% =============================================================
+
+\begin{frame}{Where we are \\ 目前所在位置}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item One household.
+  \item Prices given.
+  \item State $(b, w)$.
+  \item Value $V$, policy $c^\star$.
+\end{itemize}
+
+\vspace{1em}
+
+Five extensions left. I'll preview each.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 一个家庭。
+  \item 价格给定。
+  \item 状态 $(b, w)$。
+  \item 价值 $V$，策略 $c^\star$。
+\end{itemize}
+
+\vspace{1em}
+
+还剩五个扩展，下面逐一预览。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Extension 1a: many households (lecture 3) \\ 扩展 1a：多个家庭（第三讲）}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Same primitives, different states $(b_i, w_i)$.
+
+\vspace{0.5em}
+
+A single $c^\star(b, w)$ tells you what \emph{every} household does.
+
+\vspace{0.8em}
+
+The first hint of ``CVIAYN'': one function describes optimal behavior for everyone.
+
+\vspace{0.5em}
+
+New object: distribution $\Lambda(b, w)$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+原语相同，状态 $(b_i, w_i)$ 不同。
+
+\vspace{0.5em}
+
+一个 $c^\star(b, w)$ 就告诉你\emph{每一个}家庭的行为。
+
+\vspace{0.8em}
+
+``CVIAYN'' 的第一个线索：一个函数描述所有人的最优行为。
+
+\vspace{0.5em}
+
+新对象：分布 $\Lambda(b, w)$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Extension 1b: aggregates from the distribution \\ 扩展 1b：从分布得到总量}
+\[
+  \bar{K} = \int b \, d\Lambda,
+  \qquad
+  \bar{C} = \int c^\star(b, w) \, d\Lambda.
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Push $\Lambda_t$ through $c^\star$ and the income shock to get $\Lambda_{t+1}$.
+
+\vspace{0.5em}
+
+In a stationary world, $\Lambda_t \to \Lambda^\star$. Lecture 3 sets it up.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+用 $c^\star$ 和收入冲击把 $\Lambda_t$ 推到 $\Lambda_{t+1}$。
+
+\vspace{0.5em}
+
+在平稳情形下，$\Lambda_t \to \Lambda^\star$。第三讲给出这套设定。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Extension 2: general equilibrium (lecture 4) \\ 扩展 2：一般均衡（第四讲）}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+$R$ is no longer given. Firms pay $R = 1 + F_K(\bar{K}, L) - \delta$.
+
+\vspace{0.5em}
+
+But $\bar{K} = \int b \, d\Lambda$, $\Lambda$ depends on $c^\star$, $c^\star$ depends on $R$:
+\[
+  R \to c^\star \to \Lambda \to \bar{K} \to R.
+\]
+
+\vspace{0.3em}
+
+A fixed point. This is \alert{Aiyagari}.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+$R$ 不再给定。企业按 $R = 1 + F_K(\bar{K}, L) - \delta$ 支付。
+
+\vspace{0.5em}
+
+但 $\bar{K} = \int b \, d\Lambda$，$\Lambda$ 依赖 $c^\star$，$c^\star$ 依赖 $R$：
+\[
+  R \to c^\star \to \Lambda \to \bar{K} \to R.
+\]
+
+\vspace{0.3em}
+
+一个不动点。这就是 \alert{Aiyagari}。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Extension 3: time-varying prices (lecture 5) \\ 扩展 3：时变价格（第五讲）}
+\[
+  V_t(b, w) = \max_c u(c) + \beta \E[V_{t+1}(R_t(b{-}c){+}w', w') \mid w].
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+After a permanent policy change, $R_t$ moves over time. Households forecast $\{R_t\}$.
+
+\vspace{0.5em}
+
+Backward sweep on $V_t$, forward on $\Lambda_t$, outer fixed point on $\{R_t\}$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+永久性政策变化之后，$R_t$ 随时间变化。家庭预测 $\{R_t\}$。
+
+\vspace{0.5em}
+
+对 $V_t$ 倒推，对 $\Lambda_t$ 正推，对 $\{R_t\}$ 求外层不动点。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Extension 4: aggregate shocks (lecture 6, K-S) \\ 扩展 4：总量冲击（第六讲，K--S）}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+$\{R_t\}$ is now driven by aggregate shocks $Z_t$ (productivity, etc.).
+
+\vspace{0.5em}
+
+$R_{t+1}$ depends on $\bar{K}_{t+1}$, which depends on tomorrow's $\Lambda$, which depends on today's.
+
+\vspace{0.5em}
+
+So $\Lambda_t$ is part of the household's state:
+\[
+  (b_t, w_t, \Lambda_t, Z_t).
+\]
+Infinite-dimensional.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+现在 $\{R_t\}$ 由总量冲击 $Z_t$（生产率等）驱动。
+
+\vspace{0.5em}
+
+$R_{t+1}$ 依赖 $\bar{K}_{t+1}$，依赖明天的 $\Lambda$，依赖今天的 $\Lambda$。
+
+\vspace{0.5em}
+
+于是 $\Lambda_t$ 也是家庭状态的一部分：
+\[
+  (b_t, w_t, \Lambda_t, Z_t).
+\]
+无穷维。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The Krusell--Smith trick \\ Krusell--Smith 技巧}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Approximate $\Lambda$ by a few moments --- often just $\bar{K}$.
+
+\vspace{0.5em}
+
+Postulate a law of motion for $\bar{K}$, solve, simulate, regress, update, iterate.
+
+\vspace{0.5em}
+
+Works remarkably well (``approximate aggregation''). But it's a workaround.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+用几个矩近似 $\Lambda$——往往就用 $\bar{K}$。
+
+\vspace{0.5em}
+
+假设 $\bar{K}$ 的运动律，求解、模拟、回归、更新、迭代。
+
+\vspace{0.5em}
+
+效果出奇地好（``近似聚合''）。但毕竟只是一种权宜之计。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Extension 5: CVIAYN (lecture 7) \\ 扩展 5：CVIAYN（第七讲）}
+\[
+  V_\theta(b, w, \mathbf{m}(\Lambda), Z) \;\; \text{as a neural network.}
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Sample states. Compute Bellman residual. Push the squared residual down by SGD.
+
+\vspace{0.5em}
+
+The slogan: $V$ encodes everything about the future. Learn $V$ well and you've solved the model.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+采样状态。计算贝尔曼残差。用 SGD 把平方残差压下去。
+
+\vspace{0.5em}
+
+口号：$V$ 编码了关于未来的一切。把 $V$ 学好就等于求解了模型。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The arc, with lecture numbers \\ 课程脉络（带课次）}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{0.9}
+\begin{tabular}{c}
+One household, given prices / 单一家庭，价格给定 \quad (lecture 1, today / 第一讲，今天) \\
+$\downarrow$ \\
+Many households, exogenous prices / 多家庭，外生价格 \quad (lecture 3 / 第三讲) \\
+$\downarrow$ \\
+Stationary GE: Aiyagari / 稳态一般均衡：Aiyagari \quad (lecture 4 / 第四讲) \\
+$\downarrow$ \\
+Aiyagari transitions / Aiyagari 过渡 \quad (lecture 5 / 第五讲) \\
+$\downarrow$ \\
+Krusell--Smith \quad (lecture 6 / 第六讲) \\
+$\downarrow$ \\
+\alert{Continuation Value is All You Need / 续值即一切} \quad (lecture 7 / 第七讲) \\
+$\downarrow$ \\
+Stages, discrete choice, spatial / 阶段、离散选择、空间 \quad (lectures 8--10 / 第八--十讲)
+\end{tabular}
+\end{frame}
+
+\begin{frame}{One equation, ten lectures \\ 一个方程，十讲}
+\footnotesize
+\[
+  V(\,\text{state}\,) = \max_{\text{action}} \text{ flow payoff} + \beta \E[V(\,\text{next state}\,)].
+\]
+\[
+  V(\,\text{状态}\,) = \max_{\text{动作}} \text{ 当期收益} + \beta \E[V(\,\text{下期状态}\,)].
+\]
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}\setlength{\itemsep}{0pt}
+  \item L2: solve numerically.
+  \item L3: rich state.
+  \item L4: $R$ endogenous.
+  \item L5: time-varying.
+  \item L6: $\Lambda$ in state.
+  \item L7: $V$ = neural net.
+  \item L8--10: stages, discrete choice, applications.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}\setlength{\itemsep}{0pt}
+  \item L2：数值求解。
+  \item L3：丰富的状态。
+  \item L4：$R$ 内生。
+  \item L5：时变。
+  \item L6：$\Lambda$ 进入状态。
+  \item L7：$V$ = 神经网络。
+  \item L8--10：阶段、离散选择、应用。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+% =============================================================
+\section{How we'll work / 工作方式}
+% =============================================================
+
+\begin{frame}{Why Julia \\ 为什么用 Julia}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Fast (within $2\times$ of C).
+  \item Math-like syntax. \texttt{$\beta$ = 0.96} is valid.
+  \item Multiple dispatch.
+  \item Increasingly used in macro / SciML.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 速度快（与 C 相差 $2\times$ 以内）。
+  \item 数学化语法。\texttt{$\beta$ = 0.96} 是合法的。
+  \item 多重分派。
+  \item 在宏观 / SciML 中使用日益增多。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Notebooks \\ 笔记本}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Each lecture has a Jupyter notebook in \texttt{tutorial\_notebooks/}.
+
+\vspace{0.8em}
+
+Today's is \texttt{L01\_intro.ipynb}: state, transition, payoff, Bellman operator as a Julia function. No solving yet --- lecture 2.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+每讲在 \texttt{tutorial\_notebooks/} 下都有一个 Jupyter 笔记本。
+
+\vspace{0.8em}
+
+今天是 \texttt{L01\_intro.ipynb}：状态、转移、收益、贝尔曼算子作为一个 Julia 函数。今天还不求解——那是第二讲的事。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Setup checklist \\ 安装清单}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item Julia 1.10+\\
+    \footnotesize\url{https://julialang.org/downloads/}
+  \item \normalsize VS Code + Julia extension.
+  \item \texttt{using Pkg; Pkg.add("IJulia")}.
+  \item Jupyter (Anaconda or \texttt{pip install jupyter}).
+\end{enumerate}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item Julia 1.10+\\
+    \footnotesize\url{https://julialang.org/downloads/}
+  \item \normalsize VS Code + Julia 扩展。
+  \item \texttt{using Pkg; Pkg.add("IJulia")}。
+  \item Jupyter（Anaconda 或 \texttt{pip install jupyter}）。
+\end{enumerate}
+\end{column}
+\end{columns}
+\end{frame}
+
+\end{document}
