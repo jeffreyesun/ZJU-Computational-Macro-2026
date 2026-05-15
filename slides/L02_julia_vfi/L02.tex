@@ -113,7 +113,7 @@ For any bounded $v_1, v_2$,
 \section{Julia}
 % =============================================================
 
-\begin{frame}[fragile]{Topic 1: Values and types \\ 主题一：值与类型}
+\begin{frame}[fragile]{Values and Types \\ 值与类型}
 \begin{lstlisting}
 β = 0.96             # bound a value to a name
 typeof(β)            # Float64
@@ -140,7 +140,7 @@ Every value has a concrete \textbf{type}.
 \end{columns}
 \end{frame}
 
-\begin{frame}[fragile]{Topic 2: Arrays \\ 主题二：数组}
+\begin{frame}[fragile]{Arrays \\ 数组}
 \begin{lstlisting}
 xs  = [1.0, 2.0, 3.0]      # Vector{Float64}, length 3
 M   = [1 2; 3 4]           # Matrix{Int64}, 2×2
@@ -176,7 +176,7 @@ Arrays are column-major: dimension 1 is the row, dimension 2 is the column. A ``
 \end{columns}
 \end{frame}
 
-\begin{frame}[fragile]{Topic 2: Broadcasting \\ 主题二：广播}
+\begin{frame}[fragile]{Broadcasting \\ 广播}
 \begin{lstlisting}
 xs = [1.0, 2.0, 3.0]
 
@@ -190,24 +190,18 @@ xs .^ 2           # [1.0, 4.0, 9.0]
 
 \begin{columns}[T]
 \begin{column}{0.46\textwidth}
-The dot \texttt{.} is the ``elementwise'' marker. It applies any function elementwise --- no need to write a loop.
+The dot \texttt{.} is the ``elementwise'' marker.
 
-\vspace{0.4em}
-
-You'll see \texttt{f.(xs)} everywhere.
+Dots apply any function or operation elementwise with no need for loops.
 \end{column}
 \hfill
 \begin{column}{0.46\textwidth}
 点号 \texttt{.} 是``按元素''标记，可以让任何函数逐元素作用——不用写循环。
-
-\vspace{0.4em}
-
-代码中 \texttt{f.(xs)} 比比皆是。
 \end{column}
 \end{columns}
 \end{frame}
 
-\begin{frame}[fragile]{Topic 3: Functions \\ 主题三：函数}
+\begin{frame}[fragile]{Functions \\ 函数}
 \begin{lstlisting}
 function utility(c)
     c <= 0 && return -Inf
@@ -309,10 +303,10 @@ Generalized version is CRRA with $\gamma$, but keep it simple for now.
 \begin{frame}[fragile]{Bellman Operator $\mathcal{T}$ as a Julia Function \\ 贝尔曼算子 $\mathcal{T}$ 的 Julia 实现}
 \begin{lstlisting}
 function bellman_operator(V, params)
-    (; β, R, y, b_grid) = params
+    (; β, R, w, b_grid) = params
 
     # end-of-period wealth needed to reach each b' on the grid
-    b_end = (b_grid' .- y) ./ R
+    b_end = (b_grid' .- w) ./ R
 
     # u(c) + β V(b') for every (b, b'); take max over b'
     return maximum(u.(b_grid .- b_end) .+ β .* V'; dims = 2)
@@ -391,7 +385,7 @@ end
 \begin{frame}[fragile]{Baseline Calibration \\ 基准参数}
 \begin{lstlisting}
 b_grid = loggrid(0.05, 40.0, 400)
-params = (; β = 0.96, R = 1.04, y = 1.0, b_grid)
+params = (; β = 0.96, R = 1.04, w = 1.0, b_grid)
 
 V = solve_vfi(params; verbosity = 1)
 \end{lstlisting}
@@ -451,10 +445,33 @@ $V(b)$ 凹：多一单位财富对穷人比对富人更有价值。
 \end{columns}
 \end{frame}
 
+\begin{frame}[fragile]{Policy Function $c^\star$ \\ 策略函数 $c^\star$}
+\[
+  c^\star(b) \;=\; \arg\max_{c \in [0, b]} \; u(c) + \beta \, V\!\big(R(b - c) + w\big).
+\]
+
+\begin{lstlisting}
+function policy_function(V, params)
+    (; β, R, w, b_grid) = params
+
+    # same setup as bellman_operator
+    b_end = (b_grid' .- w) ./ R
+
+    # argmax over b' (columns) — return the chosen b'-index for each row
+    idx = argmax(u.(b_grid .- b_end) .+ β .* V'; dims = 2)
+    return vec(getindex.(idx, 2))::Vector{Int}
+end
+\end{lstlisting}
+
+\footnotesize
+Same operator as \texttt{bellman\_operator}; \texttt{argmax} in place of \texttt{maximum}. The return is a vector of integers: for each $b$, the grid-index of the optimal $b'$. /
+与 \texttt{bellman\_operator} 同一个算子；把 \texttt{maximum} 换成 \texttt{argmax}。返回一个整数向量：对每个 $b$，给出最优 $b'$ 的网格下标。
+\end{frame}
+
 \begin{frame}{Recap \\ 回顾}
 \begin{columns}[T]
 \begin{column}{0.46\textwidth}
-$V$ is now a \textbf{vector} we can examine, not just an abstract symbol.
+$V$ is now a \textbf{vector} we can examine, not just an abstract symbol. The policy $c^\star$ falls out by one $\arg\max$.
 
 \vspace{0.6em}
 
@@ -463,11 +480,12 @@ We have:
   \item a small Julia toolbox (values, arrays, broadcasting, functions)
   \item \texttt{bellman\_operator} that codes $\mathcal{T}$ in a few broadcast lines
   \item \texttt{solve\_vfi} that iterates to the fixed point
+  \item \texttt{policy\_function} that reads $c^\star$ off $V$
 \end{itemize}
 \end{column}
 \hfill
 \begin{column}{0.46\textwidth}
-$V$ 现在是一个可以查看的\textbf{向量}，不再只是抽象符号。
+$V$ 现在是一个可以查看的\textbf{向量}，不再只是抽象符号。策略 $c^\star$ 只差一次 $\arg\max$。
 
 \vspace{0.6em}
 
@@ -476,6 +494,7 @@ $V$ 现在是一个可以查看的\textbf{向量}，不再只是抽象符号。
   \item 一个小型 Julia 工具集（值、数组、广播、函数）
   \item 用几行广播实现 $\mathcal{T}$ 的 \texttt{bellman\_operator}
   \item 迭代到不动点的 \texttt{solve\_vfi}
+  \item 从 $V$ 读出 $c^\star$ 的 \texttt{policy\_function}
 \end{itemize}
 \end{column}
 \end{columns}

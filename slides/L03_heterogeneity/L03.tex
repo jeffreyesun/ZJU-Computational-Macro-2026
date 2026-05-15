@@ -588,16 +588,12 @@ $(b_i, w_j)$ 处的质量按权重 $\Pi_{j j'}$ 流向 $(b_i, w_{j'})$。
 
 \begin{frame}[fragile]{\texttt{simulate\_population} / 群体模拟}
 \begin{lstlisting}
-function simulate_population(c_ind, params, λ_0; T = 200)
-    (; R, w, w_vals, b_grid, Π) = params
-
-    # destination wealth index for each (i_b, i_w_next) pair
-    dest = snap_idx.(Ref(b_grid), b_grid[c_ind] .- w .+ w_vals')
-
+function simulate_population(c_inds, params, λ_0; T = 200)
     λ_path, λ = [copy(λ_0)], copy(λ_0)
     for t in 1:T
-        λ_mid = λ * Π                          # Stage 1: Markov on income
-        λ     = scatter_into(λ_mid, dest)      # Stages 2 + 3: index lookup
+        λ = income_shock_forward(λ, params.Π)             # Stage 1
+        λ = income_forward(λ, params)                      # Stage 2
+        λ = consumption_saving_forward(λ, c_inds, params)  # Stage 3
         push!(λ_path, copy(λ))
     end
     return λ_path
@@ -607,11 +603,11 @@ end
 \footnotesize
 \begin{columns}[T]
 \begin{column}{0.46\textwidth}
-Stage 1 is one matrix multiply. Stages 2--3 send every $(i_b, i_w)$ cell to a single destination $(i_b', i_w)$ given by the precomputed index matrix \texttt{dest} --- no lotteries.
+One forward step is just the three named stage functions composed in order. Stage 1 is a matrix multiply on the income dimension; Stages 2 and 3 are pure index moves --- cash-on-hand assembly, then policy lookup. No lotteries.
 \end{column}
 \hfill
 \begin{column}{0.46\textwidth}
-第一阶段是一次矩阵乘法。第二、第三阶段按预先算好的下标矩阵 \texttt{dest}，把每个 $(i_b, i_w)$ 单元送到唯一的目标 $(i_b', i_w)$——不用抽奖。
+一次前向就是按顺序复合三个阶段函数。第一阶段是收入维上的矩阵乘法；第二、第三阶段都是纯下标移动——先装配现金，再查策略。不用抽奖。
 \end{column}
 \end{columns}
 \end{frame}

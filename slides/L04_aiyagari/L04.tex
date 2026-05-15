@@ -1,0 +1,826 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+\usepackage{fontspec}
+\usepackage{xeCJK}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}
+
+\setCJKmainfont{Noto Sans CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+\title{Lecture 4: Equilibrium --- Aiyagari \\ {\large 第四讲：均衡 --- Aiyagari}}
+\subtitle{Computational Methods for Heterogeneous-Agent Macro}
+\author{Jeffrey Sun}
+\institute{University of Toronto}
+\date{May 14, 2026}
+
+\begin{document}
+
+\maketitle
+
+
+% =============================================================
+\section{Course Overview / 课程概览}
+% =============================================================
+
+\begin{frame}{Course Overview \\ 课程概览}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  \begin{itemize}
+    \item Week 1: \textbf{Stages}
+    \item Week 2: \textbf{Outer Loops}
+  \end{itemize}
+  Heterogeneous-agent macro models are made by combining \textbf{Stages} with \textbf{Outer Loops}.
+
+  By showing you how to use \textbf{Stages} and \textbf{Outer Loops}, I can show you how to solve \textbf{many, many models}.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  \begin{itemize}
+    \item 第一周：\textbf{Stages}
+    \item 第二周：\textbf{外层循环（Outer Loops）}
+  \end{itemize}
+  异质性主体宏观模型由 \textbf{Stage} 与\textbf{外层循环}组合而成。
+
+  只要教会你使用 \textbf{Stage} 与\textbf{外层循环}，我就能带你求解\textbf{许许多多的模型}。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================
+\section{Stages}
+% =============================================================
+
+\begin{frame}{Stages}%CLAUDE Note: Never translate "Stage" into Chinese. Keep it as "Stage." Also always capitalize "Stage."
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  The primary purpose of this course is to introduce you to solving heterogeneous-agent macro models using \textbf{Stages}.
+
+  \textbf{Stages} are the basic building blocks of heterogeneous-agent macro models. They define household problems, which are the \textbf{hard part}.
+
+  Because \textbf{Stages} are conceptually \textbf{well-defined}, \textbf{modular}, and \textbf{composable}, you can build complex macro models by simply combining \textbf{Stages}.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  本课程的主要目的，是教你用 \textbf{Stage} 来求解异质性主体宏观模型。
+
+  \textbf{Stage} 是异质性主体宏观模型的基本构件。它们定义家庭问题——也就是建模中\textbf{最难的部分}。
+
+  因为 \textbf{Stage} 在概念上\textbf{定义清晰}、\textbf{模块化}、\textbf{可组合}，只需把若干 \textbf{Stage} 拼起来，就能搭出复杂的宏观模型。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Stages Solve the Household Block \\ Stage 解决家庭模块}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  A \textbf{Stage} defines how households make decisions given their \textbf{environment}: \textbf{prices} and \textbf{parameters}.
+
+  We can combine \textbf{Stages} to solve the \textbf{household block}: Value functions and populations given prices and parameters.
+
+  This allows us to solve for \textbf{aggregates}, such as:
+  \begin{itemize}
+    \item Goods demand
+    \item Capital demand
+    \item Labour supply
+  \end{itemize}
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  一个 \textbf{Stage} 定义了在给定\textbf{环境}（\textbf{价格}与\textbf{参数}）下，家庭如何作决策。
+
+  把若干 \textbf{Stage} 组合起来，就能解出\textbf{家庭模块}：在给定价格与参数时的价值函数与人口分布。
+
+  由此即可求出各类\textbf{总量}，例如：
+  \begin{itemize}
+    \item 商品需求
+    \item 资本需求
+    \item 劳动供给
+  \end{itemize}
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Everything Else is \textbf{Outer Loops} \\ 其余的一切都是\textbf{外层循环}}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  If we solve the \textbf{household block} using \textbf{Stages}, everything else is \textbf{Outer Loops}.
+
+  Equilibrium: Solve \textbf{market clearing condition} in an outer loop, together with \textbf{firm} or \textbf{government} blocks.
+
+  Steady State: Iterate population $\lambda$ forward.
+
+  Transition: Solve for a \textbf{path} of market-clearing prices.
+
+  Global Solution with Aggregate Uncertainty: Solve for value function conditional on aggregate state.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  当我们用 \textbf{Stage} 解了\textbf{家庭模块}之后，余下的一切都是\textbf{外层循环}。
+
+  均衡：在外层循环里求解\textbf{市场出清条件}，并与\textbf{企业}或\textbf{政府}模块联立。
+
+  稳态：把人口 $\lambda$ 向前迭代。
+
+  过渡：求出市场出清价格的\textbf{一条路径}。
+
+  含聚合不确定性的全局解：在给定聚合状态下求价值函数。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Why Stages? \\ 为何要用 Stage？}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  Stages are \textbf{composable}: You can build complex models \textbf{simply} by combining Stages.
+
+  Stages have \textbf{precise mathematical definitions}: You can define and solve a model without worrying about \textbf{implementation details}.
+
+  Stages are \textbf{standardized}: You can \textbf{download} optimized implementations of Stages, and use them to build \textbf{your models}.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  Stage 是\textbf{可组合的}：把若干 Stage 拼起来，就能\textbf{轻易地}搭出复杂模型。
+
+  Stage 有\textbf{精确的数学定义}：在定义并求解模型时，无需担心\textbf{实现细节}。
+
+  Stage 是\textbf{标准化的}：你可以\textbf{下载}经过优化的 Stage 实现，用它们来搭建\textbf{自己的模型}。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Understand \textbf{Definition}, not \textbf{Implementation} \\ 理解\textbf{定义}，而非\textbf{实现}}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  I want to teach you what stages \textbf{are} and how you can \textbf{use} them.
+
+  My course notebooks provide \textbf{simple} implementations of stages, so you can understand \textbf{what they are}.
+
+  I also provide highly \textbf{optimized} implementations of stages. You do \textbf{not} need to understand how they work.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  我要教你的是 Stage \textbf{是什么}，以及如何\textbf{使用}它们。
+
+  课程的 notebooks 给出 Stage 的\textbf{简单}实现，目的是让你理解它们\textbf{是什么}。
+
+  我也提供了高度\textbf{优化}过的 Stage 实现——但你\textbf{并不需要}理解它们是怎么工作的。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Analogy: Multiplication \\ 类比：乘法}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  It is \textbf{useful} that computers can multiply numbers and matrices together.
+
+  You don't usually need to know \textbf{how} your computer does it: logic gates, binary numbers, floating point arithmetic, etc.
+
+  But you \textbf{do} need to know how multiplication is \textbf{defined}: what is the \textbf{precise mathematical definition} of matrix multiplication, for example.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  计算机能把数与矩阵相乘——这件事非常\textbf{有用}。
+
+  你通常不必知道它\textbf{怎么}做到：逻辑门、二进制、浮点运算等等。
+
+  但你\textbf{确实}需要知道乘法是如何被\textbf{定义}的——例如矩阵乘法的\textbf{精确数学定义}。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Analogy: Cars \\ 类比：汽车}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  Cars are manufactured using \textbf{standardized components}: Wheels, engines, chassis.
+
+  I will provide you with the standardized components of \textbf{heterogeneous-agent macro models}:
+  \begin{enumerate}
+    \item \textbf{Stages}
+    \item \textbf{Outer Loops}
+  \end{enumerate}
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  汽车由\textbf{标准化部件}制造而成：轮子、发动机、底盘。
+
+  我将给你\textbf{异质性主体宏观模型}的标准化部件：
+  \begin{enumerate}
+    \item \textbf{Stages}
+    \item \textbf{外层循环（Outer Loops）}
+  \end{enumerate}
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{How to Use This Material \\ 如何使用这套材料}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  In the future, I hope you will use build your own models by combining \textbf{Stages} and \textbf{Outer Loops}.
+
+  I will not cover specific topics in depth, but you can study:
+  \begin{enumerate}
+    \item Saving
+    \item Inequality
+    \item Spatial Migration
+    \item Housing Markets
+    \item Entrepreneurship
+    \item Climate Change
+    \item And much more!
+  \end{enumerate}
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  将来，希望你能把 \textbf{Stage} 与\textbf{外层循环}组合起来，搭建\textbf{你自己的模型}。
+
+  我不会深入讨论某个具体主题，但你可以自行研究：
+  \begin{enumerate}
+    \item 储蓄
+    \item 不平等
+    \item 空间迁移
+    \item 房地产市场
+    \item 创业
+    \item 气候变化
+    \item 还有更多！
+  \end{enumerate}
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Today \\ 今日}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  Today, we will transition from \textbf{defining Stages} to \textbf{using Stages}.
+
+  The first application: adding \textbf{equilibrium} and solving a complete \textbf{general equilibrium model}. (Aiyagari, 1994).
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  今天，我们要从\textbf{定义 Stage} 过渡到\textbf{使用 Stage}。
+
+  第一个应用：加入\textbf{均衡}，求解一个完整的\textbf{一般均衡模型}（Aiyagari, 1994）。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================
+\section{Aiyagari --- The Model / Aiyagari 模型}
+% =============================================================
+
+\begin{frame}{Three Blocks \\ 三个模块}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  Like many macro models, Aiyagari has three blocks:
+  \begin{enumerate}
+    \item A \textbf{household block} made of \textbf{Stages}.
+    \item A \textbf{firm} that turns capital and labour into goods.
+    \item A notion of \textbf{equilibrium} (steady state).
+  \end{enumerate}
+
+  \vspace{0.6em}
+
+  Familiar economics:
+  \begin{enumerate}
+    \item A demand side.
+    \item A supply side.
+    \item A notion of equilibrium.
+  \end{enumerate}
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  与多数宏观模型一样，Aiyagari 由三个模块构成：
+  \begin{enumerate}
+    \item 由 \textbf{Stage} 搭成的\textbf{家庭模块}。
+    \item 把资本与劳动转化为商品的\textbf{企业}。
+    \item 一个\textbf{均衡}的概念（稳态）。
+  \end{enumerate}
+
+  \vspace{0.6em}
+
+  熟悉的经济学：
+  \begin{enumerate}
+    \item 需求侧。
+    \item 供给侧。
+    \item 均衡的概念。
+  \end{enumerate}
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Plan for the rest of the lecture \\ 本讲剩余安排}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  \begin{enumerate}
+    \item Recall the household block from L3.
+    \item Read aggregates $\bar K$, $\bar L$, $\bar C$ off $\lambda^\star$.
+    \item One-line firm: $Y = K^\alpha L^{1-\alpha}$.
+    \item Define equilibrium: $\bar C = Y$.
+    \item Solve for the equilibrium $R$ in an \textbf{outer loop}.
+  \end{enumerate}
+
+  \vspace{0.4em}
+
+  Everything outside the household block is just plain code on top of what we already have.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  \begin{enumerate}
+    \item 回顾第三讲的家庭模块。
+    \item 从 $\lambda^\star$ 读出总量 $\bar K$、$\bar L$、$\bar C$。
+    \item 一行代码的企业：$Y = K^\alpha L^{1-\alpha}$。
+    \item 给出均衡的定义：$\bar C = Y$。
+    \item 用一个\textbf{外层循环}求出均衡 $R$。
+  \end{enumerate}
+
+  \vspace{0.4em}
+
+  除家庭模块外的一切，都只是在已有代码之上写几行外壳。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================
+\section{The Household Block / 家庭模块}
+% =============================================================
+
+\begin{frame}{We already built this \\ 我们已经搭好了}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  In Lecture 3 we built a household block from three Stages:
+  \begin{enumerate}
+    \item Income shock (Markov on $w$).
+    \item Income (cash-on-hand $b = R\,b^{\mathrm{end}} + w$).
+    \item Consumption--saving (grid search on $b^{\mathrm{end}}$).
+  \end{enumerate}
+
+  \vspace{0.4em}
+
+  Backward sweep $\to$ value function $V$ and policy $c^\star$.
+
+  \vspace{0.4em}
+
+  Forward sweep $\to$ stationary distribution $\lambda^\star$.
+
+  \vspace{0.4em}
+
+  Today: same code, but $R$ becomes a \emph{price} we have to solve for.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  在第三讲中我们用三个 Stage 搭好了家庭模块：
+  \begin{enumerate}
+    \item 收入冲击（$w$ 上的马尔可夫）。
+    \item 收入（组装现金 $b = R\,b^{\mathrm{end}} + w$）。
+    \item 消费--储蓄（在 $b^{\mathrm{end}}$ 上做网格搜索）。
+  \end{enumerate}
+
+  \vspace{0.4em}
+
+  后向 $\to$ 价值函数 $V$ 与策略 $c^\star$。
+
+  \vspace{0.4em}
+
+  前向 $\to$ 平稳分布 $\lambda^\star$。
+
+  \vspace{0.4em}
+
+  今天：同一份代码，但 $R$ 变成需要求解的\emph{价格}。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Solve the household block at a given $R$ \\ 在给定 $R$ 下求解家庭模块}
+\begin{lstlisting}
+function solve_aiyagari_steady_state(params; verbosity=1)
+    V_end = solve_vfi(params; verbosity)
+    λ     = find_steady_state_population(V_end, params; verbosity)
+    return (; V_end, λ)
+end
+\end{lstlisting}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+One call: VFI to convergence, then forward-iterate $\lambda$ until it stops moving.
+
+\vspace{0.4em}
+
+Output: $V$ and $\lambda^\star$.
+
+\vspace{0.4em}
+
+Everything inside is the L3 code, unchanged.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+一次调用：VFI 收敛后，再把 $\lambda$ 前向迭代到不再变化。
+
+\vspace{0.4em}
+
+输出 $V$ 与 $\lambda^\star$。
+
+\vspace{0.4em}
+
+里面用的全是第三讲那份代码，原样不动。
+\end{column}
+\end{columns}
+\end{frame}
+
+% =============================================================
+\section{Aggregates / 总量}
+% =============================================================
+
+\begin{frame}{Read $\bar K$, $\bar L$, $\bar C$ off $\lambda^\star$ \\ 从 $\lambda^\star$ 读出 $\bar K$、$\bar L$、$\bar C$}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Every aggregate is an inner product against $\lambda^\star$:
+\begin{align*}
+  \bar K &= \sum_{i,j} b_i \, \lambda^\star_{ij} \\
+  \bar L &= \sum_{i,j} \lambda^\star_{ij}        \\
+  \bar C &= \sum_{i,j} c^\star_{ij} \, \lambda^\star_{ij} \\
+  \bar V &= \sum_{i,j} V_{ij} \, \lambda^\star_{ij}
+\end{align*}
+
+\vspace{0.4em}
+
+Labour supply $\bar L$ is just the (un-normalized) population mass --- exogenous.
+
+\vspace{0.4em}
+
+Capital $\bar K$, consumption $\bar C$, and welfare $\bar V$ all move with $R$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+每个总量都是与 $\lambda^\star$ 的内积：
+\begin{align*}
+  \bar K &= \sum_{i,j} b_i \, \lambda^\star_{ij} \\
+  \bar L &= \sum_{i,j} \lambda^\star_{ij}        \\
+  \bar C &= \sum_{i,j} c^\star_{ij} \, \lambda^\star_{ij} \\
+  \bar V &= \sum_{i,j} V_{ij} \, \lambda^\star_{ij}
+\end{align*}
+
+\vspace{0.4em}
+
+劳动供给 $\bar L$ 就是（未归一化的）人口总质量——外生。
+
+\vspace{0.4em}
+
+资本 $\bar K$、消费 $\bar C$、福利 $\bar V$ 都随 $R$ 变动。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{compute\_household\_aggregates} \\ 计算家庭总量}
+\begin{lstlisting}
+function compute_household_aggregates(;param_vals...)
+    params = get_params(;param_vals...)
+    (V_end, λ) = solve_aiyagari_steady_state(params)
+
+    b_grid_policy = policy_function(V_end, params)
+    c_grid_policy = get_c_policy(params.b_grid, b_grid_policy)
+
+    L_agg = sum(λ)
+    K_agg = sum(params.b_grid .* λ)
+    V_agg = sum(V_end .* λ)
+    C_agg = sum(c_grid_policy .* λ)
+
+    return (; V_end, λ, L_agg, K_agg, V_agg, C_agg)
+end
+\end{lstlisting}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Take parameter overrides (notably $R$), solve the household block, read off the four aggregates.
+
+\vspace{0.4em}
+
+The entire demand side, in one function.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+接收参数覆盖（重点是 $R$），求解家庭模块，再读出四个总量。
+
+\vspace{0.4em}
+
+整个需求侧，就这一个函数。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[standout]
+\Large 10-minute break \\ 休息 10 分钟
+\end{frame}
+
+% =============================================================
+\section{The Firm / 企业}
+% =============================================================
+
+\begin{frame}{Cobb--Douglas \\ Cobb--Douglas 生产函数}
+  \begin{columns}[T]
+  \begin{column}{0.46\textwidth}
+  A representative firm with Cobb--Douglas production:
+  \[
+    Y = K^\alpha L^{1-\alpha}.
+  \]
+
+  \vspace{0.4em}
+
+  Given aggregate $K$ and $L$ from the household block, output $Y$ is a one-liner.
+
+  \vspace{0.4em}
+
+  No firm dynamics, no entry, no heterogeneity --- just a production function.
+
+  \vspace{0.4em}
+
+  The entire supply side is one line of code.
+  \end{column}
+  \hfill
+  \begin{column}{0.46\textwidth}
+  代表性企业，Cobb--Douglas 生产函数：
+  \[
+    Y = K^\alpha L^{1-\alpha}.
+  \]
+
+  \vspace{0.4em}
+
+  给定家庭模块给出的总量 $K$ 与 $L$，产出 $Y$ 一行代码就算出来。
+
+  \vspace{0.4em}
+
+  没有企业动态，没有进入退出，没有异质性——就是一个生产函数。
+
+  \vspace{0.4em}
+
+  整个供给侧只有一行代码。
+  \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{compute\_Y} \\ 计算产出}
+\begin{lstlisting}
+compute_Y(K, L; α=1/3) = K^α * L^(1-α)
+\end{lstlisting}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+That's it. Pass the household block's $\bar K$ and $\bar L$ in, get $Y$ out.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+就这么简单。把家庭模块的 $\bar K$ 与 $\bar L$ 传进来，就得到 $Y$。
+\end{column}
+\end{columns}
+\end{frame}
+
+% =============================================================
+\section{Equilibrium / 均衡}
+% =============================================================
+
+\begin{frame}{Goods market clearing \\ 商品市场出清}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+In steady state, what households consume must equal what the firm produces:
+\[
+  \bar C \;=\; Y.
+\]
+
+\vspace{0.4em}
+
+Define the \emph{excess demand} for goods:
+\[
+  \text{excess\_demand}(R) \;:=\; \frac{\bar C(R) - Y(R)}{Y(R)}.
+\]
+
+\vspace{0.4em}
+
+Equilibrium is the $R$ that makes $\text{excess\_demand}(R) = 0$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+稳态下，家庭消费必须等于企业产出：
+\[
+  \bar C \;=\; Y.
+\]
+
+\vspace{0.4em}
+
+定义\emph{超额需求}：
+\[
+  \text{excess\_demand}(R) \;:=\; \frac{\bar C(R) - Y(R)}{Y(R)}.
+\]
+
+\vspace{0.4em}
+
+均衡即满足 $\text{excess\_demand}(R) = 0$ 的 $R$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Why $\bar C$ and $Y$ both depend on $R$ \\ 为何 $\bar C$ 与 $Y$ 都依赖 $R$}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+$R$ flows through the household block:
+\[
+  R \;\to\; V, c^\star \;\to\; \lambda^\star \;\to\; (\bar K, \bar C).
+\]
+
+\vspace{0.4em}
+
+Then through the firm:
+\[
+  (\bar K, \bar L) \;\to\; Y.
+\]
+
+\vspace{0.4em}
+
+So one $R$ pins down one $(\bar C, Y)$ pair. Move $R$ until they agree.
+
+\vspace{0.4em}
+
+This loop is exactly the \textbf{Outer Loop} we promised on day one.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+$R$ 沿家庭模块传递：
+\[
+  R \;\to\; V, c^\star \;\to\; \lambda^\star \;\to\; (\bar K, \bar C).
+\]
+
+\vspace{0.4em}
+
+再交给企业：
+\[
+  (\bar K, \bar L) \;\to\; Y.
+\]
+
+\vspace{0.4em}
+
+所以每个 $R$ 唯一确定一对 $(\bar C, Y)$。挪动 $R$ 直到二者一致。
+
+\vspace{0.4em}
+
+这个循环正是第一天承诺的\textbf{外层循环}。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{compute\_excess\_demand} \\ 超额需求}
+\begin{lstlisting}
+function compute_excess_demand(R)
+    res = compute_household_aggregates(;R)
+    Y_agg = compute_Y(res.K_agg, res.L_agg)
+    return excess_demand = (res.C_agg - Y_agg) / Y_agg
+end
+\end{lstlisting}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Solve the household block at this $R$, plug $(\bar K, \bar L)$ into the production function, return the relative gap between $\bar C$ and $Y$.
+
+\vspace{0.4em}
+
+The household block (Stages) and the firm (one line) are glued together by this little wrapper.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+在给定 $R$ 下解家庭模块，把 $(\bar K, \bar L)$ 代入生产函数，再返回 $\bar C$ 与 $Y$ 的相对差距。
+
+\vspace{0.4em}
+
+家庭模块（Stage）与企业（一行）就靠这个小包装函数粘在一起。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Solve for the equilibrium $R$ \\ 求解均衡 $R$}
+\begin{lstlisting}
+tol = 0.0001
+lr  = 0.01
+
+R   = 1.03
+err = Inf
+while err > tol
+    excess_demand = compute_excess_demand(R)
+    R = R + excess_demand * lr
+    println("R=$R\t excess_demand=$excess_demand")
+end
+\end{lstlisting}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+A simple gradient-style update: nudge $R$ in the direction of excess goods demand.
+
+\vspace{0.4em}
+
+If $\bar C > Y$, households are consuming more than the firm produces --- raise $R$ to encourage saving, lift $K$ and hence $Y$.
+
+\vspace{0.4em}
+
+If $\bar C < Y$, households are saving too much --- lower $R$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+一个简单的梯度式更新：按超额需求的符号微调 $R$。
+
+\vspace{0.4em}
+
+若 $\bar C > Y$，家庭消费多于企业产出——提高 $R$ 鼓励储蓄，使 $K$（进而 $Y$）变大。
+
+\vspace{0.4em}
+
+若 $\bar C < Y$，家庭储蓄过多——降低 $R$。
+\end{column}
+\end{columns}
+\end{frame}
+
+% =============================================================
+\section{Wrap / 收尾}
+% =============================================================
+
+\begin{frame}{What we built today \\ 今天搭出了什么}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+A complete Aiyagari model:
+\begin{itemize}
+  \item Household block: three \textbf{Stages} from L3, reused unchanged.
+  \item Firm: one line of code.
+  \item Equilibrium: $\bar C = Y$.
+  \item An \textbf{Outer Loop} on $R$ to enforce it.
+\end{itemize}
+
+\vspace{0.6em}
+
+Stages do the demand side. The outer loop closes the model.
+
+\vspace{0.4em}
+
+Notice the asymmetry: the hard part (household block) is the part we get for free.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+一个完整的 Aiyagari 模型：
+\begin{itemize}
+  \item 家庭模块：第三讲的三个 \textbf{Stage}，原封不动。
+  \item 企业：一行代码。
+  \item 均衡：$\bar C = Y$。
+  \item 在 $R$ 上的\textbf{外层循环}保证均衡成立。
+\end{itemize}
+
+\vspace{0.6em}
+
+Stage 负责需求侧；外层循环把模型闭合。
+
+\vspace{0.4em}
+
+注意这种不对称：最难的部分（家庭模块）反而是“现成的”。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Next \\ 接下来}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+The same template gives us many more models:
+\begin{itemize}
+  \item Add depreciation, a government, taxes, transfers --- modify only the firm/outer-loop layer.
+  \item Add housing, entrepreneurship, durables --- add another Stage.
+  \item Replace gradient descent with bisection, Newton, or a continuation method --- change only the outer loop.
+\end{itemize}
+
+\vspace{0.4em}
+
+Same picture every time:
+\[
+  \textbf{Stages} \;+\; \textbf{Outer Loops}.
+\]
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+同一套模板可生出许多模型：
+\begin{itemize}
+  \item 加入折旧、政府、税收、转移支付——只改企业/外层循环。
+  \item 加入住房、创业、耐用品——添一个 Stage。
+  \item 把梯度更新换成二分、Newton 或同伦法——只改外层循环。
+\end{itemize}
+
+\vspace{0.4em}
+
+每次都是同一幅图：
+\[
+  \textbf{Stages} \;+\; \textbf{外层循环}.
+\]
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[standout]
+\Large Open Q\&A and live-coding \\ 答疑与现场代码 \\
+\texttt{tutorial\_notebooks/L04\_aiyagari.ipynb}
+\end{frame}
+
+\end{document}
