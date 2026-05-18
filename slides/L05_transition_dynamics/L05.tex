@@ -1,0 +1,1233 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+\usepackage{fontspec}
+\usepackage{xeCJK}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}
+
+\setCJKmainfont{Noto Sans CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+% Composition operator: ∘ with a subscript s. Used informally as the
+% Julia-package name `∘ₛ` but we typeset it as math \circ_s.
+\newcommand{\circs}{\mathbin{\circ_s}}
+
+\title{Lecture 5: Expectations --- Transition Dynamics \\ {\large 第五讲：预期 --- 过渡动态}}
+\subtitle{Computational Methods for Heterogeneous-Agent Macro}
+\author{Jeffrey Sun}
+\institute{University of Toronto}
+\date{May 15, 2026}
+
+\begin{document}
+
+\maketitle
+
+
+% =============================================================
+\section{Course Overview / 课程概览}
+% =============================================================
+
+\begin{frame}{Where we are \\ 我们走到哪里了}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item L1--L3: build the household block from \textbf{Stages}.
+  \item L4: close the model with an \textbf{outer loop}; solve Aiyagari SS.
+  \item \textbf{Today (L5):} meet the package; replicate L4; introduce MIT shocks.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item L1--L3：用 \textbf{Stage} 搭家庭模块。
+  \item L4：用\textbf{外层循环}闭合模型；求 Aiyagari 稳态。
+  \item \textbf{今天（L5）：}见包、复现 L4、引入 MIT 冲击。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Today's roadmap \\ 今日路线图}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item What is \texttt{HouseholdStages}?
+  \item Replicate the Aiyagari SS using it.
+  \item MIT shock: a new dynamic experiment.
+  \item Solving an MIT transition (abstract).
+  \item Implementation + IRFs + diagnostics.
+\end{enumerate}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item 什么是 \texttt{HouseholdStages}？
+  \item 用它复现 Aiyagari 稳态。
+  \item MIT 冲击：新的动态实验。
+  \item 求解 MIT 过渡（抽象层面）。
+  \item 实现 + IRF + 诊断。
+\end{enumerate}
+\end{column}
+\end{columns}
+\end{frame}
+
+
+% =============================================================
+\section{What is HouseholdStages? / 什么是 HouseholdStages？}
+% =============================================================
+
+\begin{frame}{Recall L4's promise \\ 回顾第四讲的承诺}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{L4 told you:}
+\begin{itemize}
+  \item Stages have precise math.
+  \item Stages are standardized.
+  \item You can download optimized implementations.
+\end{itemize}
+
+\vspace{0.6em}
+
+\textbf{Today:} that package is \texttt{HouseholdStages.jl}. From here on you call the library --- same math, same V/$\Lambda$ duality.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{第四讲讲过：}
+\begin{itemize}
+  \item Stage 有精确数学定义。
+  \item Stage 是标准化的。
+  \item 优化实现可以下载。
+\end{itemize}
+
+\vspace{0.6em}
+
+\textbf{今天：}那个包就是 \texttt{HouseholdStages.jl}。从今天起就调库 —— 数学不变、V/$\Lambda$ 对偶不变。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{What the package gives you \\ 包给了你什么}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{Stage primitives.} \texttt{MarkovAlong}, \texttt{WealthChange}, \texttt{ConsumptionSavings}, $\dots$
+  \item \textbf{Composition.} \texttt{$\circs$} chains Stages; \texttt{lift\_moments} attaches integrals.
+  \item \textbf{Inner-solve helpers.} V, $\Lambda$ at a given env.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{Stage 原语。}\texttt{MarkovAlong}、\texttt{WealthChange}、\texttt{ConsumptionSavings} 等。
+  \item \textbf{组合。}\texttt{$\circs$} 串 Stage；\texttt{lift\_moments} 挂积分。
+  \item \textbf{内层求解器。}给定 env 下的 V 与 $\Lambda$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Also in the library (not today) \\ 库里还有（今天不讲）}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{More Stages.} \texttt{LogitChoice}, \texttt{Migration}, \texttt{BorrowingConstraint}, \texttt{AssetPriceChange}.
+  \item \textbf{Functorial lifts.} \texttt{lift\_jacobian} (auto-diff), \texttt{lift\_gpu}.
+  \item \textbf{SSJ utilities.} Sequence-space Jacobian (covered in L6+).
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{更多 Stage。}\texttt{LogitChoice}、\texttt{Migration}、\texttt{BorrowingConstraint}、\texttt{AssetPriceChange}。
+  \item \textbf{函子提升。}\texttt{lift\_jacobian}（自动微分）、\texttt{lift\_gpu}。
+  \item \textbf{SSJ 工具。}序列空间 Jacobian（L6+ 讲）。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{What the package does \emph{not} do \\ 包\emph{不}做的事}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+The library handles \textbf{the household block at a given env}. It does \emph{not}:
+\begin{itemize}
+  \item Decide your aggregate state.
+  \item Compute prices from $\bar K$ (firm block).
+  \item Run the outer Walrasian tatonnement.
+  \item Define a transition path.
+  \item Pick a calibration.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+库管的是\textbf{给定 env 下的家庭模块}。它\emph{不}：
+\begin{itemize}
+  \item 决定你的总量状态。
+  \item 由 $\bar K$ 算价格（厂商部分）。
+  \item 跑外层 Walras tatonnement。
+  \item 定义过渡路径。
+  \item 选校准。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Why this split \\ 为什么这样切}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Household block: \textbf{generic} across HA models.
+  \item Outer loop, calibration, transition: \textbf{model-specific}.
+  \item Library boundary at "\emph{given env, solve the household problem}."
+  \item Everything else is yours to write.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 家庭模块：跨 HA 模型\textbf{通用}。
+  \item 外层、校准、过渡：\textbf{模型相关}。
+  \item 库的边界划在 "\emph{给定 env，解家庭问题}"。
+  \item 其余都你自己写。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{The three inner-solve helpers \\ 三个内层求解器}
+\begin{lstlisting}
+# V backward to a fixed point at fixed env.
+solve_vfi_steady_state_given_env!(hh, env, V0, caches, scratches)
+
+# Λ forward to stationarity using whatever policy backward populated.
+solve_lambda_steady_state_given_env!(hh, Λ0, caches, scratches)
+
+# Bundle of the two: V then Λ.
+solve_steady_state_given_env!(hh, env, V0, Λ0, caches, scratches)
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\textbf{Principle.} All three take \texttt{env} for granted. They iterate the household block alone --- no outer loop, no aggregate-state update.
+
+\textbf{原则。}三者都把 \texttt{env} 当已知，只迭代家庭模块本身 —— 不动外层、不更新总量状态。
+\end{frame}
+
+
+% =============================================================
+\section{Aiyagari SS, redone / 重做 Aiyagari 稳态}
+% =============================================================
+
+\begin{frame}{Same model as L4 \\ 和第四讲同一个模型}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{Chain} (time order): \[ \text{IncomeShock} \circs \text{IncomeReceipt} \circs \text{ConsumptionSavings}. \]
+  \item \textbf{Firm.} Cobb-Douglas, fixed labor $L$.
+  \item \textbf{Equilibrium.} $\bar K = \bar K^{\mathrm{supplied}}(\bar K)$.
+  \item \textbf{Outer loop.} Damped \textbf{tatonnement} on $\bar K$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{链}（时间顺序）：\[ \text{IncomeShock} \circs \text{IncomeReceipt} \circs \text{ConsumptionSavings}. \]
+  \item \textbf{厂商。}Cobb-Douglas，劳动 $L$ 给定。
+  \item \textbf{均衡。}$\bar K = \bar K^{\mathrm{supplied}}(\bar K)$。
+  \item \textbf{外层。}对 $\bar K$ 做阻尼 \textbf{tatonnement}。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Why tatonnement, not bisection \\ 为什么不用二分}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item L4 used bisection on $\bar K$.
+  \item In section 5 the unknown becomes a \emph{path} $\{K_t\}$ --- $T$-dimensional.
+  \item Bisection has no $T$-dim analog (no scalar to bracket).
+  \item Tatonnement does: just update $K_t$ pointwise.
+  \item We adopt tatonnement here too, for continuity.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 第四讲对 $\bar K$ 用二分。
+  \item 第 5 节未知变成\emph{路径} $\{K_t\}$ —— $T$ 维。
+  \item 二分在 $T$ 维下没有类比（没有标量可二分）。
+  \item Tatonnement 行：对 $K_t$ 逐期更新。
+  \item 这里也用 tatonnement，保持一致。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{State layout \\ 状态空间}
+\begin{lstlisting}
+layout = StateLayout(
+    StateAxis(:wealth, continuous_grid(exp_wealth_grid(0, 100, 400))),
+    StateAxis(:income, discrete_finite([0.6, 1.0, 1.4])),
+)
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{wealth} (continuous, 400-pt exp grid).
+  \item \textbf{income} (discrete, 3 levels).
+  \item Closures read \texttt{cell.wealth}, \texttt{cell.income}.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{wealth}（连续、400 点指数格点）。
+  \item \textbf{income}（离散、3 个水平）。
+  \item 闭包可读 \texttt{cell.wealth}、\texttt{cell.income}。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Stage 1: IncomeShock \\ 第 1 阶段：收入冲击}
+\begin{lstlisting}
+income_shock = MarkovAlong(layout; axis = :income, transition = P_y)
+\end{lstlisting}
+
+\vspace{0.6em}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item L4: hand-rolled \texttt{income\_shock\_backward(V, p) = V * p.Π'}.
+  \item Package: one line.
+  \item K-operator is the transition matrix; backward = $K^\top$, forward = $K$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 第四讲手写 \texttt{income\_shock\_backward(V, p) = V * p.Π'}。
+  \item 包里：一行。
+  \item K 算子就是转移矩阵；后向 $K^\top$，前向 $K$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Stage 2: IncomeReceipt \\ 第 2 阶段：领工资}
+\begin{lstlisting}
+income_receipt = WealthChange(layout;
+    wealth_post  = (cell; env) -> (e = env[];
+                    (1 + e.r) * cell.wealth + e.w * cell.income),
+    wealth_axis  = :wealth,
+    closure_deps = (:r, :w),
+)
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item L4: snapped $R b + w y$ to the nearest grid index.
+  \item Package: linear $V$ interpolation backward; share-based $\Lambda$ redistribution forward.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 第四讲：把 $R b + w y$ 落到最近格点。
+  \item 包里：后向线性 $V$ 插值；前向份额式 $\Lambda$ 再分配。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Stage 3: ConsumptionSavings \\ 第 3 阶段：消费--储蓄}
+\begin{lstlisting}
+savings = ConsumptionSavings(layout;
+    β = 0.96, utility = (cell, c; env) -> c < 0 ? -Inf : log(c),
+    wealth_axis = :wealth, monotone_search = :divide_conquer)
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item L4: built $N \times N$ trial matrix, took \texttt{maximum}.
+  \item Package: picks $b_{\mathrm{end}}$ on the grid; $c = b - b_{\mathrm{end}}$ implied.
+  \item \texttt{:divide\_conquer}: $O(N \log N)$ when policy is monotone in $b$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 第四讲：建 $N \times N$ 试矩阵，取 \texttt{maximum}。
+  \item 包里：在格点上选 $b_{\mathrm{end}}$，$c = b - b_{\mathrm{end}}$。
+  \item \texttt{:divide\_conquer}：策略对 $b$ 单调时 $O(N \log N)$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Compose; lift a moment \\ 组合；提升一个矩}
+\begin{lstlisting}
+hh = lift_moments(income_shock ∘ₛ income_receipt ∘ₛ savings;
+    K_supplied = at_end(integrand = :wealth, reduce = sum),
+)
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \texttt{$\circs$} chains Stages in time order.
+  \item The chain is \emph{itself a Stage}: own \texttt{backward!} and \texttt{forward!}.
+  \item \texttt{lift\_moments}: attach integrals against terminal $\Lambda$. Here $K^{\mathrm{supplied}} = \int b\,\mathrm{d}\Lambda$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \texttt{$\circs$} 按时间顺序串 Stage。
+  \item 整条链\emph{本身就是 Stage}：自带 \texttt{backward!} 和 \texttt{forward!}。
+  \item \texttt{lift\_moments}：把积分挂到链尾 $\Lambda$ 上。这里 $K^{\mathrm{supplied}} = \int b\,\mathrm{d}\Lambda$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Inner solve at a single $\bar K$ \\ 给定 $\bar K$ 的内层解}
+\begin{lstlisting}
+env  = (; K, aiyagari_prices(K, p)...)        # (K, r, w)
+info = solve_steady_state_given_env!(hh, env, V, Λ, caches, scratches)
+K_supplied = compute_moments(hh, env).K_supplied
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{Line 1.} Build env: $(K, r, w)$.
+  \item \textbf{Line 2.} V backward; $\Lambda$ forward.
+  \item \textbf{Line 3.} Read off $K^{\mathrm{supplied}}$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{第 1 行。}造 env：$(K, r, w)$。
+  \item \textbf{第 2 行。}V 后向；$\Lambda$ 前向。
+  \item \textbf{第 3 行。}读 $K^{\mathrm{supplied}}$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Outer tatonnement loop \\ 外层 tatonnement 循环}
+\begin{lstlisting}
+K = 5.0
+while iters < max_iter
+    env  = (; K, aiyagari_prices(K, p)...)
+    info = solve_steady_state_given_env!(hh, env, V, Λ, caches, scratches)
+    V, Λ = info.V, info.Λ
+    K_supplied = compute_moments(hh, env).K_supplied
+    K_err      = abs(K_supplied - K) / K
+    K_err <= rtol && break
+    K += update_speed * (K_supplied - K)        # damped tatonnement
+end
+\end{lstlisting}
+
+\vspace{0.4em}
+
+Each pass: inner solve $\to$ read $K^{\mathrm{supplied}}$ $\to$ nudge $\bar K$. Stop on $|K_\mathrm{err}| / K < $\texttt{rtol}.
+
+每轮：内层解 $\to$ 读 $K^{\mathrm{supplied}}$ $\to$ 调 $\bar K$。$|K_\mathrm{err}| / K < $\texttt{rtol} 即停。
+\end{frame}
+
+\begin{frame}[fragile]{Run it \\ 跑一下}
+\begin{lstlisting}
+iter 17: K = 5.6921 → K_supplied = 5.5446, K_err = 0.025925
+iter 18: K = 5.6847 → K_supplied = 5.6731, K_err = 0.002055
+Converged in 18 outer iterations.
+  K   = 5.6847,  r   = 0.0384,  w   = 1.1964
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Same model as L4. Shorter code path.
+  \item L4 landed $\bar K \approx 5.30$ with coarser grid + bisection.
+  \item We land $\bar K = 5.68$ with 400-pt exp grid.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 和第四讲同一模型，代码更短。
+  \item 第四讲粗格点 + 二分 $\bar K \approx 5.30$。
+  \item 这里 400 点指数格点 $\bar K = 5.68$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+
+% =============================================================
+\section{MIT shock / MIT 冲击}
+% =============================================================
+
+\begin{frame}{What's a transition path? \\ 什么是过渡路径？}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{Steady state.} A single $(K, V, \Lambda)$. Time-invariant.
+  \item \textbf{Transition.} A sequence $\{(K_t, V_t, \Lambda_t)\}_{t = 1,\dots,T}$. The economy is \emph{moving}.
+\end{itemize}
+
+\vspace{0.6em}
+
+\textbf{Why we care:}
+\begin{itemize}
+  \item Welfare during an unexpected reform.
+  \item Speed of convergence to a new SS.
+  \item Matching IRFs in calibration.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{稳态。}单点 $(K, V, \Lambda)$，与时间无关。
+  \item \textbf{过渡。}序列 $\{(K_t, V_t, \Lambda_t)\}_{t = 1,\dots,T}$。经济在\emph{动}。
+\end{itemize}
+
+\vspace{0.6em}
+
+\textbf{为什么关心：}
+\begin{itemize}
+  \item 未预期改革下的福利分布。
+  \item 收敛到新稳态的速度。
+  \item 校准中匹配 IRF。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The MIT shock \\ MIT 冲击}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Standardized by Boppart--Krusell--Mitman (2018).
+
+\vspace{0.4em}
+
+\textbf{Three ingredients:}
+\begin{itemize}
+  \item $t = 0$: at steady state.
+  \item $t = 1$: one-time impulse. Agents \emph{surprised}.
+  \item $t \geq 1$: \emph{perfect foresight} of the entire future path.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+Boppart--Krusell--Mitman 2018 把它做成了标配。
+
+\vspace{0.4em}
+
+\textbf{三个要素：}
+\begin{itemize}
+  \item $t = 0$：处于稳态。
+  \item $t = 1$：一次性冲击，主体\emph{毫无预期}。
+  \item $t \geq 1$：\emph{完美预期}整条未来路径。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Why use it \\ 为什么用它}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Name from MIT macro courses. Teaching device.
+  \item Tradeoff: unrealistic, but tractable.
+  \item No expectations integrals. No aggregate randomness.
+  \item Deterministic version of a stochastic IRF.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 名字来自 MIT 宏观课堂。教学设计。
+  \item 权衡：不现实，但可解。
+  \item 没有期望积分，没有总量随机性。
+  \item 随机 IRF 的确定性版本。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Our example shock \\ 我们的示例冲击}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Setup.} One-time positive TFP innovation at $t = 1$, AR(1) decay:
+\[
+  A_1 = 1.05, \quad A_{t+1} = 1 + \rho (A_t - 1), \quad \rho = 0.85.
+\]
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item The \emph{only} exogenous driver.
+  \item Everything else --- $\{r_t, w_t, K_t, V_t, \Lambda_t\}$ --- is the \textbf{response}.
+  \item Pick $T = 100$ → $A_T - 1 < 10^{-7}$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{设置。}$t = 1$ 一次正向 TFP 冲击，之后 AR(1) 衰回基线：
+\[
+  A_1 = 1.05, \quad A_{t+1} = 1 + \rho (A_t - 1), \quad \rho = 0.85.
+\]
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item \emph{唯一}的外生驱动。
+  \item 其它都是\textbf{响应}：$\{r_t, w_t, K_t, V_t, \Lambda_t\}$。
+  \item 取 $T = 100$ → $A_T - 1 < 10^{-7}$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{The TFP path in code \\ TFP 路径的代码}
+\begin{lstlisting}
+function tfp_path(T; A_0 = 1.05, ρ = 0.85, A_ss = 1.0)
+    A = zeros(T); A[1] = A_0
+    for t in 2:T
+        A[t] = A_ss + ρ * (A[t-1] - A_ss)
+    end
+    return A
+end
+\end{lstlisting}
+
+\vspace{0.4em}
+
+Defined locally. The library leaves transition utilities to the consumer --- nothing in \texttt{HouseholdStages} touches anything beyond a single env.
+
+本地定义。库把过渡相关的工具一律交给调用方 —— \texttt{HouseholdStages} 不碰单个 env 之外的任何东西。
+\end{frame}
+
+
+% =============================================================
+\section{Solving an MIT transition / 解 MIT 过渡}
+% =============================================================
+
+\begin{frame}{The problem statement \\ 问题陈述}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Given:} $\{A_t\}_{t = 1}^T$, the chain, the firm.
+
+\vspace{0.4em}
+
+\textbf{Find:} $\{K_t, V_t, \Lambda_t\}$ such that
+\begin{itemize}
+  \item $V_{T+1} = V_{\mathrm{ss}}$ (terminal).
+  \item $\Lambda_1 = \Lambda_{\mathrm{ss}}$ (initial).
+  \item $V_t = $ chain's backward at $(K_t, A_t)$.
+  \item $\Lambda_{t+1} = $ chain's forward on $\Lambda_t$.
+  \item Markets clear: $K_t = K_t^{\mathrm{supplied}}$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{已知：}$\{A_t\}_{t = 1}^T$、家庭链、厂商。
+
+\vspace{0.4em}
+
+\textbf{求：}$\{K_t, V_t, \Lambda_t\}$ 满足
+\begin{itemize}
+  \item $V_{T+1} = V_{\mathrm{ss}}$（终端）。
+  \item $\Lambda_1 = \Lambda_{\mathrm{ss}}$（初始）。
+  \item $V_t = $ 链在 $(K_t, A_t)$ 上的后向。
+  \item $\Lambda_{t+1} = $ 链对 $\Lambda_t$ 的前向。
+  \item 市场出清：$K_t = K_t^{\mathrm{supplied}}$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The three ingredients \\ 三个要件}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{1. Backward sweep on $V$.}
+\[
+  V_T \leftarrow V_{\mathrm{ss}}, \quad V_t = \texttt{backward!}(V_{t+1}, \mathrm{env}_t).
+\]
+
+\textbf{2. Forward sweep on $\Lambda$.}
+\[
+  \Lambda_1 \leftarrow \Lambda_{\mathrm{ss}}, \quad \Lambda_{t+1} = \texttt{forward!}(\Lambda_t).
+\]
+
+\textbf{3. Tatonnement on $\{K_t\}$.}
+\[
+  K_t \leftarrow (1 - d)\,K_t + d\,K_t^{\mathrm{supplied}}.
+\]
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{1. $V$ 后向扫。}
+\[
+  V_T \leftarrow V_{\mathrm{ss}}, \quad V_t = \texttt{backward!}(V_{t+1}, \mathrm{env}_t).
+\]
+
+\textbf{2. $\Lambda$ 前向扫。}
+\[
+  \Lambda_1 \leftarrow \Lambda_{\mathrm{ss}}, \quad \Lambda_{t+1} = \texttt{forward!}(\Lambda_t).
+\]
+
+\textbf{3. 对 $\{K_t\}$ tatonnement。}
+\[
+  K_t \leftarrow (1 - d)\,K_t + d\,K_t^{\mathrm{supplied}}.
+\]
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Why backward for $V$ \\ 为什么 $V$ 要后向}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $V_t$ = value at $t$, given everything from $t$ onward.
+  \item Bellman: $V_t = r_t + \beta\, K^\top V_{t+1}$.
+  \item Value flows future $\to$ present.
+  \item Start from known $V_{T+1}$; walk backward.
+  \item Terminal $V_{T+1} = V_{\mathrm{ss}}$ holds if $T$ is large enough that $A_T \approx 1$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $V_t$ = $t$ 期价值，含 $t$ 之后的一切。
+  \item Bellman：$V_t = r_t + \beta\, K^\top V_{t+1}$。
+  \item 价值由未来传到现在。
+  \item 从已知 $V_{T+1}$ 倒着走。
+  \item 终端 $V_{T+1} = V_{\mathrm{ss}}$ 成立的前提：$T$ 大到 $A_T \approx 1$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Why forward for $\Lambda$ \\ 为什么 $\Lambda$ 要前向}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $\Lambda_t$ = mass distribution over states at $t$.
+  \item Mass flows forward: tomorrow comes from today.
+  \item Forward step: $\Lambda_{t+1} = K\,\Lambda_t$.
+  \item Start from $\Lambda_1 = \Lambda_{\mathrm{ss}}$; walk forward.
+  \item Initial condition: shock at $t = 1$ is the first SS departure.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $\Lambda_t$ = $t$ 期主体在各状态上的质量分布。
+  \item 质量沿时间前流：明天由今天决定。
+  \item 前向步：$\Lambda_{t+1} = K\,\Lambda_t$。
+  \item 从 $\Lambda_1 = \Lambda_{\mathrm{ss}}$ 前推。
+  \item 初始条件：$t = 1$ 冲击是首次偏离稳态。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Tatonnement on a sequence \\ 在序列上做 tatonnement}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Scalar (L4 / section 2):}
+\[
+  K \leftarrow K + \mathrm{lr} \cdot (K^{\mathrm{supplied}} - K).
+\]
+
+\textbf{Path (L5):} pointwise.
+\[
+  K_t \leftarrow (1 - d)\,K_t + d\,K_t^{\mathrm{supplied}}.
+\]
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item Newton with the sequence-space Jacobian (next lecture) is faster.
+  \item Same loop structure.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{标量（L4 / 第 2 节）：}
+\[
+  K \leftarrow K + \mathrm{lr} \cdot (K^{\mathrm{supplied}} - K).
+\]
+
+\textbf{路径（L5）：}逐期。
+\[
+  K_t \leftarrow (1 - d)\,K_t + d\,K_t^{\mathrm{supplied}}.
+\]
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item 下讲序列空间 Jacobian + Newton 更快。
+  \item 循环结构一样。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{The algorithm \\ 算法}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+K_t = fill(K_ss, T)                   # initial guess
+V_path[T+1] = V_ss; Λ_path[1] = Λ_ss  # boundary conditions
+while res > tol
+    for t in T:-1:1                                  # backward sweep
+        V_path[t] = backward!(hh, V_path[t+1], env_t)
+    end
+    for t in 1:T                                     # forward sweep
+        backward!(hh, V_path[t+1], env_t)            #   re-seat policy
+        Λ_path[t+1]   = forward!(hh, Λ_path[t])
+        K_supplied[t] = compute_moments(hh, env_t).K_supplied
+    end
+    res = maximum(abs, K_supplied .- K_t)            # damped tatonnement
+    K_t .= (1 - damping) .* K_t .+ damping .* K_supplied
+end
+\end{lstlisting}
+
+Two \texttt{for}-loops in a \texttt{while}-loop. 两个 \texttt{for} 嵌在 \texttt{while} 里。
+\end{frame}
+
+
+% =============================================================
+\section{Implementation / 实现}
+% =============================================================
+
+\begin{frame}{Warm start from the steady state \\ 用稳态做热启动}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{We need both:}
+\begin{itemize}
+  \item $V_{\mathrm{ss}}$: terminal for backward sweep.
+  \item $\Lambda_{\mathrm{ss}}$: initial for forward sweep.
+\end{itemize}
+
+\vspace{0.4em}
+
+Section 2's tatonnement gives both.
+
+\vspace{0.4em}
+
+\textbf{Setup:} $V_{\mathrm{ss}} \to V_\mathrm{path}[T+1]$; $\Lambda_{\mathrm{ss}} \to \Lambda_\mathrm{path}[1]$; initial $\{K_t\} \equiv K_{\mathrm{ss}}$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{两个都要：}
+\begin{itemize}
+  \item $V_{\mathrm{ss}}$：后向扫终端条件。
+  \item $\Lambda_{\mathrm{ss}}$：前向扫初始条件。
+\end{itemize}
+
+\vspace{0.4em}
+
+第 2 节的 tatonnement 同时给出二者。
+
+\vspace{0.4em}
+
+\textbf{设置：}$V_{\mathrm{ss}} \to V_\mathrm{path}[T+1]$；$\Lambda_{\mathrm{ss}} \to \Lambda_\mathrm{path}[1]$；$\{K_t\}$ 初值 $\equiv K_{\mathrm{ss}}$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Backward sweep \\ 后向扫描}
+\begin{lstlisting}
+for t in T:-1:1
+    env_t = (; K = K_t[t], aiyagari_prices(K_t[t], A_path[t], p)...)
+    V_path[t] .= backward!(hh, V_path[t+1], env_t, caches, scratches)
+end
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $T$ calls to \texttt{backward!}, $t = T \to 1$.
+  \item Each mutates per-stage \texttt{caches} (kernels, policies).
+  \item After the loop, caches hold period 1's policy.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 调 $T$ 次 \texttt{backward!}，$t = T \to 1$。
+  \item 每次都会改写各 Stage 的 \texttt{caches}（kernel、策略）。
+  \item 循环后缓存停在第 1 期。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Forward sweep (re-seat caches!) \\ 前向扫描（缓存要重设！）}
+\begin{lstlisting}
+for t in 1:T
+    env_t = (; K = K_t[t], aiyagari_prices(K_t[t], A_path[t], p)...)
+    backward!(hh, V_path[t+1], env_t, caches, scratches)   # re-seat
+    Λ_path[t+1]   .= forward!(hh, Λ_path[t], caches, scratches)
+    K_supplied[t]  = compute_moments(hh, env_t).K_supplied
+end
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\textbf{Why the second \texttt{backward!}?} Forward reads policy from \texttt{caches}; policy depends on the env. The backward sweep left caches at period 1, so we re-seat at period $t$ first.
+
+\textbf{为什么还要 \texttt{backward!}？}前向从 \texttt{caches} 读策略，策略依赖该期 env。后向扫已把缓存挪到第 1 期，要先重设到第 $t$ 期。
+\end{frame}
+
+\begin{frame}[fragile]{Outer tatonnement update \\ 外层 tatonnement 更新}
+\begin{lstlisting}
+res = maximum(abs, K_supplied .- K_t)
+K_t .= (1 - damping) .* K_t .+ damping .* K_supplied
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Vectorized: every period gets the same damped Walrasian update.
+  \item Residual: $\infty$-norm over the path.
+  \item Below \texttt{tol}: path consistent everywhere.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 向量化：每期同样阻尼的 Walras 更新。
+  \item 残差：路径上的 $\infty$-范数。
+  \item 降到 \texttt{tol} 以下：路径处处一致。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Run it \\ 跑起来}
+\begin{lstlisting}
+Computing steady state…
+  K_ss = 5.6847, r_ss = 0.0384, w_ss = 1.1964
+
+Solving transition (T = 100, A_0 = 1.05, ρ = 0.85, d = 0.2)…
+  iter  5: ‖K_supplied - K‖∞ = 0.0639
+  iter 17: ‖K_supplied - K‖∞ = 0.0018   ← discretization floor
+
+  K[1] = 5.74    K[5] = 5.87    K[20] = 5.81    K[100] = 5.69
+\end{lstlisting}
+
+\vspace{0.4em}
+
+End-of-period: $K[1] = 5.74$ already --- agents save \emph{within} period 1. Peak at $t \approx 5$. Residual floors at $\sim 2.5 \times 10^{-3}$ (diagnostics next).
+
+期末口径：$K[1] = 5.74$ —— 第 1 期内已开始储蓄。峰值在 $t \approx 5$。残差停在 $\sim 2.5 \times 10^{-3}$（下面诊断）。
+\end{frame}
+
+\begin{frame}{IRF: capital \\ 脉冲响应：资本}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Shape.}
+\begin{itemize}
+  \item $\Delta A$ raises $r$.
+  \item Higher $r$ $\to$ more savings.
+  \item More saving $\to$ higher $K$ $\to$ lower $r$. Self-correcting.
+\end{itemize}
+
+\vspace{0.4em}
+
+\textbf{Lag.} Wealth distribution has inertia. Peak in $K$ lags peak in $A$ by $\sim 5$ periods.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{形状。}
+\begin{itemize}
+  \item $\Delta A$ 抬升 $r$。
+  \item 更高的 $r$ $\to$ 更多储蓄。
+  \item 更多储蓄 $\to$ 更高 $K$ $\to$ 回落 $r$。自我修正。
+\end{itemize}
+
+\vspace{0.4em}
+
+\textbf{时滞。}财富分布有惯性。$K$ 峰落在 $A$ 峰后约 5 期。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{IRF: $r_t$ and $w_t$ \\ 脉冲响应：$r_t$ 与 $w_t$}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{$r_t$.}
+\begin{itemize}
+  \item Jumps on impact ($A_1$ before $K$ moves).
+  \item Falls below SS as $K$ overshoots.
+  \item Returns to $r_{\mathrm{ss}}$ as $A_t \to 1$.
+\end{itemize}
+
+\textbf{$w_t$.}
+\begin{itemize}
+  \item Same pattern, opposite sign.
+  \item Above SS while $K$ overshoots.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{$r_t$。}
+\begin{itemize}
+  \item 第 1 期冲上（$A_1$ 早于 $K$ 反应）。
+  \item $K$ 过冲让 $r$ 跌到稳态之下。
+  \item $A_t \to 1$ 时回到 $r_{\mathrm{ss}}$。
+\end{itemize}
+
+\textbf{$w_t$。}
+\begin{itemize}
+  \item 形状相同，方向相反。
+  \item $K$ 过冲期间高于稳态。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Welfare \\ 福利}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Wealthy agents: transient capital gain on $r$.
+  \item Wage-dependent agents: pick up the $w$ side.
+\end{itemize}
+
+\vspace{0.6em}
+
+For Aiyagari we get a \emph{distribution} of welfare effects, period by period. Disentangling the two channels is one thing MIT shocks let you do.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 富人：在 $r$ 上拿到暂时性资本收益。
+  \item 靠工资的人：从 $w$ 一侧获益。
+\end{itemize}
+
+\vspace{0.6em}
+
+Aiyagari 给出福利效应的\emph{分布}，逐期看。把两条腿拆开是 MIT 冲击的用处之一。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Pick $T$ large enough \\ $T$ 要够大}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $T$ = horizon where $A_T \approx 1$ and $V_{T+1} = V_{\mathrm{ss}}$.
+  \item Too small $\to$ terminal condition contaminates the path.
+\end{itemize}
+
+\vspace{0.4em}
+
+\textbf{Rule of thumb.} $T$ such that $A_T - 1 < 10^{-3}$. At $\rho = 0.85$, $A_0 = 1.05$: $T \approx 25$. We use $T = 100$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $T$ = 假设 $A_T \approx 1$、$V_{T+1} = V_{\mathrm{ss}}$ 的时窗。
+  \item 太小 $\to$ 终端条件污染整条路径。
+\end{itemize}
+
+\vspace{0.4em}
+
+\textbf{经验法则。}取 $T$ 使 $A_T - 1 < 10^{-3}$。$\rho = 0.85$、$A_0 = 1.05$ 时约 $T = 25$。这里取 $T = 100$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Cost of the algorithm \\ 算法成本}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Per outer iteration: $O(T)$ inner ops.
+  \item Each inner op $\approx$ one L4 inner Bellman step.
+  \item $\sim 20$ outer iterations × $T = 100$ $\to$ $\sim 2000\times$ a single L4 step.
+\end{itemize}
+
+\vspace{0.4em}
+
+Manageable. SSJ + Newton (next lecture) cuts this dramatically.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 每次外层迭代：$O(T)$ 次内层操作。
+  \item 每次内层 $\approx$ 第四讲一次 Bellman 步。
+  \item 约 20 次外层 × $T = 100$ $\to$ 约第四讲单步的 $2000$ 倍。
+\end{itemize}
+
+\vspace{0.4em}
+
+可控。下讲 SSJ + Newton 会大幅压缩。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Damping is a craft \\ 阻尼是个手艺}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{Too high.} Oscillation. Residual stalls or grows.
+  \item \textbf{Too low.} Slow. Residual decays at near-1 rate.
+  \item \textbf{Sweet spot here.} $d \in [0.15, 0.25]$; we use $0.2$.
+\end{itemize}
+
+\vspace{0.4em}
+
+Problem-dependent. Bigger / more persistent shocks $\to$ lower $d$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{太大。}振荡。残差停滞或增大。
+  \item \textbf{太小。}爬得慢。残差以接近 1 的比率下降。
+  \item \textbf{这里的最佳。}$d \in [0.15, 0.25]$，我们取 $0.2$。
+\end{itemize}
+
+\vspace{0.4em}
+
+依赖问题。冲击越大、越持续 $\to$ $d$ 越小。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Residual history \\ 残差历史}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{What you should see.} Geometric decay, then a \emph{discretization floor}.
+
+\vspace{0.4em}
+
+\textbf{Why a floor.}
+\begin{itemize}
+  \item \texttt{ConsumptionSavings} picks $b_{\mathrm{end}}$ via \texttt{argmax} on a discrete grid.
+  \item Near the borrowing constraint, optimal $b_{\mathrm{end}}$ flips between adjacent cells as $K_t$ wobbles.
+\end{itemize}
+
+\vspace{0.4em}
+
+\textbf{Fix.} Smoothed \texttt{LogitChoice} savings, or refine the grid.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{应当看到。}几何下降，然后撞上\emph{离散化下限}。
+
+\vspace{0.4em}
+
+\textbf{为什么有下限。}
+\begin{itemize}
+  \item \texttt{ConsumptionSavings} 在离散格点上用 \texttt{argmax} 选 $b_{\mathrm{end}}$。
+  \item 借贷约束附近，$K_t$ 微动让最优 $b_{\mathrm{end}}$ 在相邻格子间翻转。
+\end{itemize}
+
+\vspace{0.4em}
+
+\textbf{对策。}用平滑的 \texttt{LogitChoice}，或加密格点。
+\end{column}
+\end{columns}
+\end{frame}
+
+
+% =============================================================
+\section{Wrap / 收尾}
+% =============================================================
+
+\begin{frame}{What we built today \\ 今天搭出了什么}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Met \texttt{HouseholdStages.jl}.
+  \item Replicated the Aiyagari SS using it.
+  \item Switched outer loop: bisection $\to$ tatonnement.
+  \item Introduced MIT shocks.
+  \item Solved a deterministic perfect-foresight transition.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 见到了 \texttt{HouseholdStages.jl}。
+  \item 用它复现了 Aiyagari 稳态。
+  \item 外层：二分 $\to$ tatonnement。
+  \item 引入了 MIT 冲击。
+  \item 解了一条确定性完美预期过渡。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The key insight \\ 关键洞察}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+The household block doesn't care SS vs.\ transition.
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item Same chain. Same V/$\Lambda$ duality. Same library calls.
+\end{itemize}
+
+\vspace{0.4em}
+
+Only the outer loop changes:
+\begin{itemize}
+  \item SS: tatonnement on a scalar.
+  \item Transition: tatonnement on a path.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+家庭模块不在乎是稳态还是过渡。
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item 同一条链。同一个 V/$\Lambda$ 对偶。同一组库调用。
+\end{itemize}
+
+\vspace{0.4em}
+
+变的只有外层：
+\begin{itemize}
+  \item 稳态：在标量上 tatonnement。
+  \item 过渡：在路径上 tatonnement。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\end{document}
