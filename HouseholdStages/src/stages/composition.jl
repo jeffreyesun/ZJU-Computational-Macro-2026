@@ -1,32 +1,46 @@
 """
-A composition of stages. Backward walks the chain from end to start;
-forward walks it from start to end. The chain itself is a stage, so
-chains-of-chains are well-defined and stages form a category under
-composition. The chain's `V_start` is the first inner stage's `V_start`,
-its `Λ_end` is the last inner stage's `Λ_end`.
+A composition of stages, optionally carrying moment specs.
 
-Construct as `StageChain((s1, s2, s3))` or `s1 ∘ₛ s2 ∘ₛ s3`. The `∘ₛ`
+Construct as `ChainStage((s1, s2, s3))` or `s1 ∘ₛ s2 ∘ₛ s3`. The `∘ₛ`
 operator (Greek `\\circ` + `s`) composes left-to-right in *time* (`s1`
-runs first).
+runs first). Moments are attached via [`lift_moments`](@ref), which
+returns a new `ChainStage` with the `moments` field populated (it is an
+empty `NamedTuple` by default). Reading the moments after a forward
+pass is the job of [`compute_moments`](@ref).
 """
-struct StageChain{Stages<:Tuple} <: AbstractStage
-    stages::Stages
-    function StageChain{Stages}(stages::Stages) where {Stages<:Tuple}
-        isempty(stages) && error("StageChain must contain at least one stage")
-        return new{Stages}(stages)
-    end
+struct ChainStage{Stages<:Tuple, Specs<:NamedTuple, L} <: AbstractStage
+    stages     :: Stages
+    moments    :: Specs
+    out_layout :: L
 end
 
-StageChain(stages::Stages) where {Stages<:Tuple} =
-    StageChain{Stages}(stages)
+# Outer constructor. `out_layout` is the last stage's output layout; it
+# sits unused until lift_moments lights up compute_moments, but it's
+# cheap to derive and keeps the struct shape uniform across the
+# moments-empty and moments-non-empty cases.
+function ChainStage(stages::Tuple; moments::NamedTuple = (;))
+    isempty(stages) && error("ChainStage must contain at least one stage")
+    out = _stage_out_layout(stages[end])
+    return ChainStage{typeof(stages), typeof(moments), typeof(out)}(stages, moments, out)
+end
+
+"""CLAUDE
+Output layout of the terminal stage. Falls back to an explicit error
+when the stage does not expose an `output_layout` field — every
+package-level stage does, so this is informational rather than
+operational.
+"""
+_stage_out_layout(stage::AbstractStage) =
+    hasfield(typeof(stage), :output_layout) ? stage.output_layout :
+        error("stage of type $(typeof(stage)) has no output_layout field; cannot derive chain output layout")
 
 """
-    chain_env_names(chain::StageChain) -> NTuple{N, Symbol}
+    chain_env_names(chain::ChainStage) -> NTuple{N, Symbol}
 
 The union of `effective_env_slice` across all stages in the chain — the
 set of `env` fields the chain's backward / forward needs.
 """
-function chain_env_names(chain::StageChain)
+function chain_env_names(chain::ChainStage)
     names = Symbol[]
     for s in chain.stages
         for k in effective_env_slice(s)
@@ -36,9 +50,9 @@ function chain_env_names(chain::StageChain)
     return Tuple(unique(names))
 end
 
-effective_env_slice(chain::StageChain) = chain_env_names(chain)
+effective_env_slice(chain::ChainStage) = chain_env_names(chain)
 
-function validate_env(chain::StageChain, env)
+function validate_env(chain::ChainStage, env)
     needed = chain_env_names(chain)
     missing_keys = Symbol[]
     for k in needed
@@ -51,20 +65,25 @@ end
 
 # Buffer accessors override the defaults: a chain doesn't store its own
 # V_start / Λ_end; it borrows from its endpoints.
-V_start_buffer(c::StageChain) = V_start_buffer(first(c.stages))
-Λ_end_buffer(c::StageChain) = Λ_end_buffer(last(c.stages))
+V_start_buffer(c::ChainStage) = V_start_buffer(first(c.stages))
+Λ_end_buffer(c::ChainStage) = Λ_end_buffer(last(c.stages))
 
 # Allocate #
 #----------#
 
-# A chain's workspace is a tuple of per-stage workspaces. Each element of
-# `kernels` / `scratches` is the corresponding stage's `kernel` /
-# `scratch`.
-function allocate(c::StageChain, ::Type{T} = Float64) where {T}
-    pairs    = map(s -> allocate(s, T), c.stages)
-    kernels   = map(first, pairs)
-    scratches = map(last, pairs)
-    return (kernels, scratches)
+# A chain's workspace is a `Tuple` of per-stage `(; kernel, scratch)` bundles
+# — element `i` is the bundle for `c.stages[i]`. backward!/forward! pass
+# `buffers[i]` through to each stage without unpacking.
+"""
+    allocate(chain::ChainStage, T = Float64) -> Tuple
+
+Build the per-stage workspace tuple for a chain. Element `i` is the
+bundle returned by `allocate(c.stages[i], T)` — a NamedTuple
+`(; kernel, scratch)`. Pass the whole tuple to `backward!` / `forward!`;
+the chain forwards `buffers[i]` to each stage.
+"""
+function allocate(c::ChainStage, ::Type{T} = Float64) where {T}
+    return ntuple(i -> allocate(c.stages[i], T), length(c.stages))
 end
 
 # Backward pass #
@@ -79,34 +98,30 @@ end
 # 40 alloc / pass disappear and the chain backward+forward drops from
 # 1.03x → ~1.00x of the hand-coded reference.
 
-@generated function backward!(c::StageChain{Stages}, V_end, env,
-                               kernels::Tuple, scratches::Tuple) where {Stages<:Tuple}
+@generated function backward!(c::ChainStage{Stages}, V_end, env, buffers) where {Stages<:Tuple}
     N = length(Stages.parameters)
-    body = Expr(:block)
-    push!(body.args, :(V = V_end))
-    for i in N:-1:1
-        push!(body.args, :(V = backward!(c.stages[$i], V, env,
-                                          kernels[$i], scratches[$i])))
+    calls = [:(V = backward!(c.stages[$i], V, env, buffers[$i]))
+             for i in N:-1:1]
+    return quote
+        V = V_end
+        $(calls...)
+        return V
     end
-    push!(body.args, :(return V))
-    return body
 end
 
 # Forward pass #
 #--------------#
 
-@generated function forward!(c::StageChain{Stages}, Λ_start,
-                              kernels::Tuple, scratches::Tuple,
+@generated function forward!(c::ChainStage{Stages}, Λ_start, buffers,
                               moments = nothing) where {Stages<:Tuple}
     N = length(Stages.parameters)
-    body = Expr(:block)
-    push!(body.args, :(Λ = Λ_start))
-    for i in 1:N
-        push!(body.args, :(Λ = forward!(c.stages[$i], Λ,
-                                         kernels[$i], scratches[$i], moments)))
+    calls = [:(Λ = forward!(c.stages[$i], Λ, buffers[$i], moments))
+             for i in 1:N]
+    return quote
+        Λ = Λ_start
+        $(calls...)
+        return Λ
     end
-    push!(body.args, :(return Λ))
-    return body
 end
 
 # Composition operator #
@@ -119,10 +134,29 @@ Left-to-right stage composition: in the resulting chain, `s1`'s forward
 pass runs first, then `s2`'s. Semantically, this is the *time* order of
 the stages within a period.
 
-`∘ₛ` is associative and produces a flat `StageChain` regardless of how
-parentheses are placed.
+`∘ₛ` is associative and produces a flat `ChainStage` regardless of how
+parentheses are placed. Composing a chain that already carries moments
+errors — call `lift_moments` last, after composition is finalised.
 """
-∘ₛ(a::AbstractStage, b::AbstractStage) = StageChain((a, b))
-∘ₛ(a::StageChain, b::AbstractStage) = StageChain((a.stages..., b))
-∘ₛ(a::AbstractStage, b::StageChain) = StageChain((a, b.stages...))
-∘ₛ(a::StageChain, b::StageChain) = StageChain((a.stages..., b.stages...))
+∘ₛ(a::AbstractStage, b::AbstractStage) = ChainStage((a, b))
+
+function ∘ₛ(a::ChainStage, b::AbstractStage)
+    _assert_no_moments(a, "left")
+    return ChainStage((a.stages..., b))
+end
+
+function ∘ₛ(a::AbstractStage, b::ChainStage)
+    _assert_no_moments(b, "right")
+    return ChainStage((a, b.stages...))
+end
+
+function ∘ₛ(a::ChainStage, b::ChainStage)
+    _assert_no_moments(a, "left")
+    _assert_no_moments(b, "right")
+    return ChainStage((a.stages..., b.stages...))
+end
+
+_assert_no_moments(c::ChainStage, side::AbstractString) =
+    isempty(c.moments) ||
+        error("∘ₛ: cannot compose a ChainStage that already has moments on its $side. " *
+              "Call `lift_moments` last, after all `∘ₛ` composition.")

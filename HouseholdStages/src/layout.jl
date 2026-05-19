@@ -34,15 +34,37 @@ struct DiscreteFinite{T, V<:AbstractVector{T}} <: AxisKind
 end
 
 """
-    continuous_grid(lo, hi; size) -> ContinuousGrid
-    continuous_grid(grid::AbstractVector) -> ContinuousGrid
+    continuous_grid(lo, hi; length, spacing = :linear) -> ContinuousGrid
+    continuous_grid(grid::AbstractVector)             -> ContinuousGrid
 
-Construct a continuous-grid axis kind. The two-argument form builds an
-evenly-spaced grid of `size` points on `[lo, hi]`; the one-argument form
-wraps a user-supplied numeric vector directly.
+Construct a continuous-grid axis kind. The two-argument form builds a
+grid of `length` points on `[lo, hi]` with the requested spacing — either
+`:linear` (`range(lo, hi; length)`) or `:log` (geometric in `(lo-shift,
+hi-shift)`, dense near `lo` and coarse near `hi`, matching the wealth-
+grid convention used in `examples/`). The one-argument form wraps a
+user-supplied numeric vector directly. The kwarg `size` is also
+accepted as a deprecated synonym for `length`.
+
+`:log` spacing maps `t ∈ [0, log((hi-lo+shift)/shift)]` through
+`exp(t)·shift - shift + lo`, putting the first knot at `lo`, the last
+at `hi`, and concentrating points near `lo`. `shift` defaults to `1`.
 """
-continuous_grid(lo::Real, hi::Real; size::Int) =
-    ContinuousGrid(collect(range(lo, hi; length = size)))
+function continuous_grid(lo::Real, hi::Real;
+                         length::Union{Nothing, Int} = nothing,
+                         size::Union{Nothing, Int}   = nothing,
+                         spacing::Symbol             = :linear,
+                         shift::Real                 = 1.0)
+    n = @something length size error("continuous_grid: pass either `length` or `size`")
+    if spacing === :linear
+        return ContinuousGrid(collect(range(lo, hi; length = n)))
+    elseif spacing === :log
+        grid = [exp(t) * shift - shift + lo
+                for t in range(0.0, log((hi - lo + shift) / shift); length = n)]
+        return ContinuousGrid(grid)
+    else
+        error("continuous_grid: spacing must be :linear or :log, got :$spacing")
+    end
+end
 continuous_grid(grid::AbstractVector{<:Real}) = ContinuousGrid(grid)
 
 """
@@ -62,14 +84,12 @@ Sugar over [`discrete_finite`](@ref) for symbolic categorical axes.
 categorical(syms::AbstractVector{Symbol}) = discrete_finite(syms)
 
 """
-    StateAxis{Name, K<:AxisKind}
+    StateAxis(name, kind) -> StateAxis{name, typeof(kind)}
 
 A named axis of a state layout. `Name` is a `Symbol` carried in the type
 parameter so axis names participate in compile-time dispatch and
 NamedTuple-keyed iteration (`cells`). `kind` carries the axis's runtime
 data (grid or levels).
-
-Construct via `StateAxis(name, kind)`.
 """
 struct StateAxis{Name, K<:AxisKind}
     kind :: K
@@ -77,6 +97,17 @@ end
 
 StateAxis(name::Symbol, kind::K) where {K<:AxisKind} =
     StateAxis{name, K}(kind)
+
+"""
+    StateAxis(name, levels::AbstractVector) -> StateAxis
+
+Shortcut: a raw `AbstractVector` is treated as a [`DiscreteFinite`](@ref)
+level set. Equivalent to `StateAxis(name, discrete_finite(levels))`.
+Use [`continuous_grid`](@ref) explicitly for continuous (interpolated)
+axes.
+"""
+StateAxis(name::Symbol, levels::AbstractVector) =
+    StateAxis(name, discrete_finite(levels))
 
 """
     axisname(axis) -> Symbol
@@ -133,8 +164,7 @@ Return a new layout with the axis named `name` removed.
 """
 function drop_axis(layout::StateLayout, name::Symbol)
     pos = axis_position(layout, name)
-    remaining = ntuple(i -> i < pos ? layout.axes[i] : layout.axes[i+1],
-                       length(layout.axes) - 1)
+    remaining = (layout.axes[1:pos-1]..., layout.axes[pos+1:end]...)
     return StateLayout(remaining...)
 end
 
@@ -167,73 +197,30 @@ function axis_position(layout::StateLayout, name::Symbol)
     idx === nothing && error("axis :$name not found in layout with names $(names)")
     return idx
 end
-axis_position(::Type{L}, name::Symbol) where {L<:StateLayout} =
-    axis_position(L, Val(name))
-function axis_position(::Type{<:StateLayout{Names}}, ::Val{name}) where {Names, name}
-    idx = findfirst(==(name), Names)
-    idx === nothing && error("axis :$name not found in layout with names $(Names)")
-    return idx
-end
 
 # Cells iteration #
 #-----------------#
 
-"""
-    CellsIterator{Names, V<:Tuple, N}
-
-Iterator returned by [`cells`](@ref). Each iteration yields a pair
-`(idx, cell)`:
-
-  * `idx`  — `NamedTuple{Names}` of `Int` axis indices.
-  * `cell` — `NamedTuple{Names}` of axis-coordinate values (leaves typed
-    `Float64`, `Int`, `Symbol`, …).
-"""
-struct CellsIterator{Names, V<:Tuple, N}
-    values :: V
-    sizes  :: NTuple{N, Int}
+# Type-stable single-cell builder: out-of-line so the closure capturing
+# `values` (a heterogeneous tuple) doesn't poison inference inside the
+# generator returned by `cells`.
+function _cell_pair(values::V, ci::CartesianIndex{N}, ::Val{Names}) where {Names, V, N}
+    idx_nt  = NamedTuple{Names}(Tuple(ci))
+    cell_nt = NamedTuple{Names}(ntuple(i -> values[i][ci[i]], Val(N)))
+    return (idx_nt, cell_nt)
 end
 
 """
-    cells(layout) -> CellsIterator
+    cells(layout) -> generator
 
 Iterate the cells of a [`StateLayout`](@ref) in column-major order. Each
 iteration yields `(idx, cell)`: an integer-index NamedTuple and an
 axis-value NamedTuple, both keyed by axis name.
 """
 function cells(layout::StateLayout{Names}) where {Names}
-    N = length(layout.axes)
     values = map(axisvalues, layout.axes)
-    sizes  = map(axissize,   layout.axes)
-    return CellsIterator{Names, typeof(values), N}(values, sizes)
-end
-
-Base.length(it::CellsIterator) = prod(it.sizes)
-Base.IteratorSize(::Type{<:CellsIterator}) = Base.HasLength()
-Base.IteratorEltype(::Type{<:CellsIterator}) = Base.HasEltype()
-Base.eltype(::Type{<:CellsIterator{Names}}) where {Names} = Tuple
-
-function Base.iterate(it::CellsIterator{Names, V, N}) where {Names, V, N}
-    ci = CartesianIndices(it.sizes)
-    nxt = iterate(ci)
-    nxt === nothing && return nothing
-    cart, ci_state = nxt
-    return _cells_pair(it, cart), (ci, ci_state)
-end
-
-function Base.iterate(it::CellsIterator{Names, V, N}, state) where {Names, V, N}
-    ci, ci_state = state
-    nxt = iterate(ci, ci_state)
-    nxt === nothing && return nothing
-    cart, ci_state2 = nxt
-    return _cells_pair(it, cart), (ci, ci_state2)
-end
-
-function _cells_pair(it::CellsIterator{Names, V, N},
-                     cart::CartesianIndex{N}) where {Names, V, N}
-    idxs = cart.I
-    idx_nt  = NamedTuple{Names}(idxs)
-    cell_nt = NamedTuple{Names}(ntuple(i -> it.values[i][idxs[i]], Val(N)))
-    return (idx_nt, cell_nt)
+    sizes  = layout_size(layout)
+    return (_cell_pair(values, ci, Val(Names)) for ci in CartesianIndices(sizes))
 end
 
 # Broadcastable cell array #
@@ -243,8 +230,9 @@ end
 Return an `N`-D dense `Array{NamedTuple}` of cell values, shape =
 `layout_size(layout)`. Each entry is the axis-value `NamedTuple` for that
 multi-index. Suitable as a broadcast operand for closures of the form
-`f(cell, args...; env)`: `f.(cell_array(layout), other_arr; env=Ref(env))`
-evaluates `f` at each cell elementwise.
+`f(cell; env)`: `f.(cell_array(layout); env)` evaluates `f` at each cell
+elementwise (`env` is passed plainly — broadcasting treats a non-array
+scalar as constant).
 
 The element type is `NamedTuple{Names, Tuple{...}}` and is isbits when
 every axis stores isbits values (typically the case for numeric axes;
@@ -253,17 +241,7 @@ every axis stores isbits values (typically the case for numeric axes;
 function cell_array(layout::StateLayout{Names}) where {Names}
     N = length(layout.axes)
     values = map(axisvalues, layout.axes)
-    sizes  = map(axissize,   layout.axes)
-    cells_nt = Array{_cell_eltype(layout)}(undef, sizes)
-    for cart in CartesianIndices(sizes)
-        idxs = cart.I
-        cells_nt[cart] = NamedTuple{Names}(ntuple(i -> values[i][idxs[i]], Val(N)))
-    end
-    return cells_nt
-end
-
-# Type of one cell in `cell_array(layout)`. Used for storage typing.
-function _cell_eltype(layout::StateLayout{Names}) where {Names}
-    value_eltypes = map(a -> eltype(axisvalues(a)), layout.axes)
-    return NamedTuple{Names, Tuple{value_eltypes...}}
+    sizes  = layout_size(layout)
+    return [NamedTuple{Names}(ntuple(i -> values[i][cart[i]], Val(N)))
+            for cart in CartesianIndices(sizes)]
 end

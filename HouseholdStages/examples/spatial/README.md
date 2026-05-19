@@ -2,10 +2,10 @@
 
 Smallest spatial extension that exercises:
 - A `categorical` axis with symbol-valued levels (`:home`, `:abroad`).
-- The dedicated `Migration` stage acting on that location axis
+- The dedicated `MigrationStage` stage acting on that location axis
   (cost matrix + Gumbel scale ε — no user closure).
 - The L03/L04 three-stage decomposition of the savings problem
-  (`IncomeReceipt ∘ₛ ConsumptionSavings`) sitting underneath the
+  (`IncomeReceipt ∘ₛ ConsumptionSavingsStage`) sitting underneath the
   migration stage.
 - Per-location moments via integrand closures that read
   `cell.location`.
@@ -21,30 +21,30 @@ StateLayout(
     StateAxis(:location, categorical([:home, :abroad])),
 )
 
-chain = IncomeShock ∘ₛ Migration ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavings
+chain = IncomeShock ∘ₛ MigrationStage ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage
 ```
 
 Four stages. The income shock resolves first; households then choose
 location (logit-smoothed, with a migration cost for any move);
 location-specific prices flow through `IncomeReceipt` (the
 deterministic `b ↦ (1 + r_loc) b + w_loc y`); finally
-`ConsumptionSavings` picks next-period wealth on the grid with implicit
+`ConsumptionSavingsStage` picks next-period wealth on the grid with implicit
 budget `c = b_in - b_end`.
 
 The wealth grid is exponentially spaced (`exp_wealth_grid`) for the
-same reason as the other examples: `WealthChange.backward` linearly
+same reason as the other examples: `WealthChangeStage.backward` linearly
 interpolates V past the top knot for cells where
 `(1 + r_loc) b + w_loc y > w_max`, and a uniform grid amplifies V per
 pass and breaks the Bellman contraction.
 
-## The `Migration` stage
+## The `MigrationStage` stage
 
-The 2026-05-16 overnight added a dedicated `Migration` stage that
-replaces the prior `LogitChoice`-with-flow-payoff-closure pattern.
+The 2026-05-16 overnight added a dedicated `MigrationStage` stage that
+replaces the prior `LogitChoiceStage`-with-flow-payoff-closure pattern.
 The API is:
 
 ```julia
-Migration(layout;
+MigrationStage(layout;
     location_axis  = :location,
     migration_cost = [0.0 0.5;           # (n_loc, n_loc), origin → destination
                       0.5 0.0],
@@ -136,6 +136,6 @@ borrowing constraint than the single-location problem.
 
 | File | Purpose |
 |---|---|
-| `model.jl` | Stages (incl. `Migration`), prices, household chain |
+| `model.jl` | Stages (incl. `MigrationStage`), prices, household chain |
 | `steady_state.jl` | Damped Picard on `(K_home, K_abroad)` |
 | `../notebooks/spatial.jl` | Four-section walkthrough driver |

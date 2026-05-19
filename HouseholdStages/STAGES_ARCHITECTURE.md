@@ -63,7 +63,7 @@ axis named and typed — see §1.5). Two function spaces live over `S`:
 ("moments") are linear functionals `M(S) → ℝ`.
 
 A stage's input and output state spaces may differ: a stage can drop
-or add axes. `ForgetfulSum` is the worked example — its backward
+or add axes. `ForgetfulSumStage` is the worked example — its backward
 broadcasts along the dropped axis, its forward sums along it, and the
 duality identity holds.
 
@@ -82,16 +82,16 @@ small data parameterizes K, not K-as-a-dense-matrix:
 
 | Stage class | What K is | Kernel content |
 |---|---|---|
-| `MarkovAlong` (pure Markov) | Transition matrix, V/θ-independent | `nothing` (matrix lives on the stage struct) |
-| `Argmax` (hard discrete choice) | Sparse permutation `δ_{π(s)}` | Integer policy `π::Array{Int}` |
-| `LogitChoice` (smoothed) | Stochastic kernel `Σ_a π(a\|s) δ_{σ(s,a)}` | Probability tensor `P::Array{Float64}` |
-| `Migration` (logit on a location axis) | Stochastic kernel from a cost-matrix + ε softmax | Probability tensor `P::Array{Float64}` |
-| `WealthChange` (deterministic wealth update) | Per-cell deterministic map; backward linear-V interp | `nothing` (interp is on-the-fly) |
-| `ConsumptionSavings` (continuous savings argmax) | Sparse-stochastic via on-grid argmax | Integer next-wealth policy |
-| `ForgetfulSum` (layout-changing) | Sum-along-axis operator | `nothing` (structural) |
+| `MarkovStage` (pure Markov) | Transition matrix, V/θ-independent | `nothing` (matrix lives on the stage struct) |
+| `ArgmaxStage` (hard discrete choice) | Sparse permutation `δ_{π(s)}` | Integer policy `π::Array{Int}` |
+| `LogitChoiceStage` (smoothed) | Stochastic kernel `Σ_a π(a\|s) δ_{σ(s,a)}` | Probability tensor `P::Array{Float64}` |
+| `MigrationStage` (logit on a location axis) | Stochastic kernel from a cost-matrix + ε softmax | Probability tensor `P::Array{Float64}` |
+| `WealthChangeStage` (deterministic wealth update) | Per-cell deterministic map; backward linear-V interp | `nothing` (interp is on-the-fly) |
+| `ConsumptionSavingsStage` (continuous savings argmax) | Sparse-stochastic via on-grid argmax | Integer next-wealth policy |
+| `ForgetfulSumStage` (layout-changing) | Sum-along-axis operator | `nothing` (structural) |
 | `IdentityStage` | Identity operator on M(S) | `nothing` (structural) |
 | `UtilityStage` | Identity on M(S); flow payoff on V | `nothing` (utility evaluated inline) |
-| `BorrowingConstraint` | Identity on M(S); `-Inf` mask on V | `nothing` (mask applied inline) |
+| `BorrowingConstraintStage` | Identity on M(S); `-Inf` mask on V | `nothing` (mask applied inline) |
 
 Backward and forward both consume `K`, just via different actions:
 
@@ -114,7 +114,7 @@ associative; the chain doesn't materialize `K_1 ∘ K_2` explicitly —
 it walks backward through stages applying `K_iᵀ` to accumulate
 `V_in`, then forward applying `K_i` to push Λ.
 
-`Stage` is closed under `∘ₛ`. The `StageChain` struct holds a tuple
+`Stage` is closed under `∘ₛ`. The `ChainStage` struct holds a tuple
 of stages and implements the stage interface; a compound built from
 primitives is itself a stage.
 
@@ -203,10 +203,10 @@ the only kwarg.
 utility = (cell, c; env) -> (c^(1 - env.σ)) / (1 - env.σ)
 
 # Deterministic wealth update — `cell` first; `env` is passed as a
-# Ref by WealthChange's broadcast, so unwrap it with `env[]`.
+# Ref by WealthChangeStage's broadcast, so unwrap it with `env[]`.
 wealth_post = (cell; env) -> (1 + env[].r) * cell.wealth + env[].w * cell.income
 
-# LogitChoice flow payoff — `(cell, action; env)`.
+# LogitChoiceStage flow payoff — `(cell, action; env)`.
 flow_payoff = (cell, action; env) -> action == 0.0 ?
                                      -ϕ * env.q * cell.housing : 0.0
 ```
@@ -221,7 +221,7 @@ Declare which `env` fields the closure reads via the `closure_deps`
 kwarg at construction:
 
 ```julia
-WealthChange(layout;
+WealthChangeStage(layout;
     wealth_post  = (cell; env) -> (1 + env[].r) * cell.wealth + env[].w * cell.income,
     wealth_axis  = :wealth,
     closure_deps = (:r, :w))
@@ -244,7 +244,7 @@ type variables**; no abstract field types anywhere in the public
 stage interface.
 
 ```julia
-struct MarkovAlong{M<:AbstractMatrix, T<:Real, N,
+struct MarkovStage{M<:AbstractMatrix, T<:Real, N,
                    LIn<:StateLayout, LOut<:StateLayout,
                    AV<:AbstractArray{T,N}} <: AbstractStage
     transition    :: M
@@ -256,7 +256,7 @@ struct MarkovAlong{M<:AbstractMatrix, T<:Real, N,
     Λ_end         :: AV
 end
 
-struct LogitChoice{F, BF,
+struct LogitChoiceStage{F, BF,
                    LIn<:StateLayout, LOut<:StateLayout,
                    N, D, T<:Real, AV<:AbstractArray{T,N}} <: AbstractStage
     choice_axis    :: Symbol
@@ -280,31 +280,39 @@ field access resolves to a concrete type at compile time.
 Every stage implements:
 
 ```julia
-backward!(stage, V_end, env, kernel, scratch) -> V_start
-forward!(stage, Λ_start, kernel, scratch, moments) -> Λ_end
-allocate(stage, T) -> (kernel, scratch)
+backward!(stage, V_end, env, buffers) -> V_start
+forward!(stage, Λ_start, buffers, moments=nothing) -> Λ_end
+allocate(stage, T) -> buffers
 static_env_deps(::Type{Stage}) -> NamedTuple
 ```
 
 `backward!` writes into the stage's pre-allocated `V_start` buffer
-(accessed via `V_start_buffer(stage)`) and into `kernel` (which
-records the evaluated K-operator data — the policy index, the choice
-probability tensor, etc.). `forward!` reads `kernel`, writes into
-`Λ_end`. **`forward!` does not take `env`** — env was fully consumed
-by `backward!` in producing the kernel. Both methods return the
-buffer they wrote to.
+(accessed via `V_start_buffer(stage)`) and into `buffers.kernel`
+(which records the evaluated K-operator data — the policy index, the
+choice probability tensor, etc.). `forward!` reads `buffers.kernel`,
+writes into `Λ_end`. **`forward!` does not take `env`** — env was
+fully consumed by `backward!` in producing the kernel. Both methods
+return the buffer they wrote to.
 
-`allocate(stage, T)` produces `(kernel, scratch)` workspace:
+`allocate(stage, T)` produces a single `buffers` object. The exact
+shape is stage-class-dependent:
 
-- **`kernel`** holds the runtime data parameterizing the K-operator
-  at the current `(V_out, env)`. Lifetime spans backward → forward;
-  cannot be aliased across stages. For stages whose K is V/θ-
-  independent and lives on the struct (`MarkovAlong.transition`,
-  `IdentityStage`, `ForgetfulSum`, `UtilityStage`), `kernel` is
-  `nothing`.
-- **`scratch`** is anything else the stage needs internally —
-  permuted views, intermediate sums, working arrays. Carries no
-  morphism content; may be aliased across stages of matching shape.
+- **Non-chain stages**: `buffers` is a NamedTuple `(; kernel, scratch)`
+  with two fields:
+  - **`kernel`** holds the runtime data parameterizing the K-operator
+    at the current `(V_out, env)`. Lifetime spans backward → forward;
+    cannot be aliased across stages. For stages whose K is V/θ-
+    independent and lives on the struct (`MarkovStage.transition`,
+    `IdentityStage`, `ForgetfulSumStage`, `UtilityStage`), `kernel` is
+    `nothing`.
+  - **`scratch`** is anything else the stage needs internally —
+    permuted views, intermediate sums, working arrays. Carries no
+    morphism content; may be aliased across stages of matching shape.
+- **`ChainStage`**: `buffers` is a `Tuple` of per-stage buffers, one
+  per stage in the chain. Inside `backward!` / `forward!` on a chain,
+  each per-stage call receives `buffers[i]`.
+- **`ProductStage`**: `buffers` is a `Tuple` of per-component buffers,
+  one per axis-component.
 
 The stage's `V_start` and `Λ_end` buffers are stage-allocated by
 layout (not user-written); accessible via `V_start_buffer(stage)`
@@ -312,10 +320,10 @@ and `Λ_end_buffer(stage)`.
 
 **Convenience forms.** None. Every `backward!` / `forward!` /
 `backward_adjoint!` / `forward_adjoint!`
-call must explicitly pass the `(kernel, scratch)` workspace. This
+call must explicitly pass the `buffers` workspace. This
 avoids hidden allocations and makes the kernel/scratch discipline
 visible at every call site. Tests and examples allocate workspace
-explicitly via `kernel, scratch = allocate(stage)` and pass it
+explicitly via `buffers = allocate(stage)` and pass it
 through.
 
 ### 2.3 `Param{T}` for calibrated-or-swept parameters
@@ -361,7 +369,7 @@ users who want raw indices can use `CartesianIndices` directly;
 ### 2.5 Stage composition and product as structs
 
 ```julia
-struct StageChain{Stages<:Tuple} <: AbstractStage
+struct ChainStage{Stages<:Tuple} <: AbstractStage
     stages :: Stages
     # env_type computed at construction from per-stage env_slices
 end
@@ -377,7 +385,7 @@ Both subtype `AbstractStage` (§2.6) and implement `backward!`,
 backward and forward for forward (via a `@generated` unroll for zero
 allocation); the product delegates per-component.
 
-`StageChain` and `ProductStage` are construction representations; in
+`ChainStage` and `ProductStage` are construction representations; in
 prose, both are *stages* (closure under `∘ₛ` and `×ₛ`).
 
 ### 2.6 `AbstractStage` is a tag, not a hierarchy
@@ -396,14 +404,14 @@ AbstractStage}}`) and chain dispatch; nothing more.
 ### 2.7 CPU/GPU dispatch
 
 Stages are parametric on their array-typed fields. A
-`MarkovAlong{Matrix{Float64}, ...}` and a
-`MarkovAlong{CuArray{Float64,2}, ...}` are different concrete
+`MarkovStage{Matrix{Float64}, ...}` and a
+`MarkovStage{CuArray{Float64,2}, ...}` are different concrete
 instantiations of the same struct definition.
 
 ```julia
-lift_gpu(stage::MarkovAlong) = MarkovAlong(cu(stage.transition), ...)
-lift_gpu(stage::LogitChoice) = LogitChoice(..., stage.flow_payoff, ...)
-lift_gpu(chain::StageChain)  = StageChain(map(lift_gpu, chain.stages))
+lift_gpu(stage::MarkovStage) = MarkovStage(cu(stage.transition), ...)
+lift_gpu(stage::LogitChoiceStage) = LogitChoiceStage(..., stage.flow_payoff, ...)
+lift_gpu(chain::ChainStage)  = ChainStage(map(lift_gpu, chain.stages))
 ```
 
 `allocate(stage, T)` produces workspace whose array types match the
@@ -445,9 +453,9 @@ contracts.
 
 ### 3.1 Per-instance fields = same-type, different-parameter stages
 
-Two `MarkovAlong` stages with different transition matrices are two
+Two `MarkovStage` stages with different transition matrices are two
 instances of the same struct type with different field values. Two
-`LogitChoice` stages with different `ε` values likewise. The instance
+`LogitChoiceStage` stages with different `ε` values likewise. The instance
 is the namespace; the chain iterates generically.
 
 ### 3.2 `Param`-typed fields are sweepable without rebuild
@@ -487,7 +495,7 @@ A stage's `input_layout` and `output_layout` need not match. The
 chain's typing machinery validates that adjacent stages agree
 (one's `output_layout == next's input_layout`) at construction.
 
-`ForgetfulSum` is the canonical example — drops one axis. The dual
+`ForgetfulSumStage` is the canonical example — drops one axis. The dual
 `Introduce` (adds an axis) is not currently shipped.
 
 ### 3.5 Default axis names
@@ -496,9 +504,9 @@ Library-provided stages default to:
 
 | Default name | Typical kind | Used by |
 |---|---|---|
-| `:wealth` | `continuous_grid` | `WealthChange`, `ConsumptionSavings` |
-| `:income` | `discrete_finite` (Float64) | `MarkovAlong` (income shock) |
-| `:location` | `discrete_finite` (Symbol) | `Migration`, `Argmax`/`LogitChoice` |
+| `:wealth` | `continuous_grid` | `WealthChangeStage`, `ConsumptionSavingsStage` |
+| `:income` | `discrete_finite` (Float64) | `MarkovStage` (income shock) |
+| `:location` | `discrete_finite` (Symbol) | `MigrationStage`, `ArgmaxStage`/`LogitChoiceStage` |
 | `:age` | `discrete_finite` (Int) | `replicate_age` product axis |
 | `:group` | (varies) | Generic default for `product` |
 
@@ -570,21 +578,21 @@ layout = StateLayout(
 )
 
 # The Aiyagari decomposition splits wealth dynamics into a
-# deterministic-update stage (WealthChange) and a consumption-savings
-# argmax (ConsumptionSavings). Closures follow `f(cell, args...; env)`;
-# WealthChange passes env as a Ref through its broadcast, so the
+# deterministic-update stage (WealthChangeStage) and a consumption-savings
+# argmax (ConsumptionSavingsStage). Closures follow `f(cell, args...; env)`;
+# WealthChangeStage passes env as a Ref through its broadcast, so the
 # closure unwraps via `env[]`.
 
 wealth_post(cell; env) = (1 + env[].r) * cell.wealth + env[].w * cell.income
 
-income_shock = MarkovAlong(layout; axis = :income, transition = params.P_y)
+income_shock = MarkovStage(layout; axis = :income, transition = params.P_y)
 
-receipt = WealthChange(layout;
+receipt = WealthChangeStage(layout;
     wealth_post  = wealth_post,
     wealth_axis  = :wealth,
     closure_deps = (:r, :w))
 
-savings = ConsumptionSavings(layout;
+savings = ConsumptionSavingsStage(layout;
     β               = params.β,
     utility         = (cell, c; env) -> (c^(1 - params.σ)) / (1 - params.σ),
     wealth_axis     = :wealth,
@@ -604,11 +612,11 @@ function aiyagari_prices(K, p = params)
 end
 
 # Inner V fixed point: repeat the full Bellman backward until V settles.
-function _vfi!(hh, env, V0, kernels, scratches;
+function _vfi!(hh, env, V0, buffers;
                tol = 1e-7, maxiter = 1500)
     V = copy(V0)
     for _ in 1:maxiter
-        Vn = backward!(hh, V, env, kernels, scratches)
+        Vn = backward!(hh, V, env, buffers)
         d  = maximum(abs, Vn .- V); V .= Vn
         d < tol && return V
     end
@@ -617,10 +625,10 @@ end
 
 # Inner Λ fixed point: forward! does not take env — env was consumed
 # by backward! in producing the kernel.
-function _lambda!(hh, Λ0, kernels, scratches; tol = 1e-6, maxiter = 20_000)
+function _lambda!(hh, Λ0, buffers; tol = 1e-6, maxiter = 20_000)
     Λ = copy(Λ0)
     for _ in 1:maxiter
-        Λn = forward!(hh, Λ, kernels, scratches)
+        Λn = forward!(hh, Λ, buffers)
         d  = maximum(abs, Λn .- Λ); Λ .= Λn
         d < tol && return Λ
     end
@@ -630,7 +638,7 @@ end
 # Tatonnement on K.
 function aiyagari_steady_state(p = params; K_init = 5.0,
                                update_speed = 0.05, rtol = 2e-2)
-    kernels, scratches = allocate(hh)
+    buffers = allocate(hh)
     dims = layout_size(layout)
     V    = zeros(Float64, dims...)
     Λ    = fill(1.0 / prod(dims), dims...)
@@ -640,8 +648,8 @@ function aiyagari_steady_state(p = params; K_init = 5.0,
     while abs(K_err) > rtol
         (; r, w) = aiyagari_prices(K, p)
         env = (; K, r, w)
-        V   = _vfi!(hh, env, V, kernels, scratches)
-        Λ   = _lambda!(hh, Λ, kernels, scratches)
+        V   = _vfi!(hh, env, V, buffers)
+        Λ   = _lambda!(hh, Λ, buffers)
         K_supplied = compute_moments(hh, env).K_supplied
         K_err = (K_supplied - K) / K
         K += update_speed * K_err * K
@@ -738,8 +746,8 @@ Two modes:
   `forward_adjoint!` methods written alongside the primal. Cheap
   when the number of output directions (e.g., a scalar loss) is
   small relative to the parameter count. **All primitive stages
-  have adjoint methods including the choice stages (`Argmax`,
-  `LogitChoice`, `Migration`, `ConsumptionSavings`)** — they
+  have adjoint methods including the choice stages (`ArgmaxStage`,
+  `LogitChoiceStage`, `MigrationStage`, `ConsumptionSavingsStage`)** — they
   exploit the envelope theorem to reuse the primal-evaluated K
   (stored as the policy / probability tensor in the kernel field)
   as a frozen linear operator for the VJP. Subgradient at boundary

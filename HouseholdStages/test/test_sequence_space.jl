@@ -54,12 +54,12 @@ end
     # E_t[integrand](s) = P^t · integrand applied as a vector.
     P = [0.7 0.3; 0.3 0.7]
     layout = StateLayout(StateAxis(:z, discrete_finite([0.0, 1.0])))
-    chain = MarkovAlong(layout; axis = :z, transition = P)
-    caches, scratches = allocate(chain)
+    chain = MarkovStage(layout; axis = :z, transition = P)
+    buffers = allocate(chain)
     # Integrand: identity on z (so E_t[z | s_0 = s] is the t-step
     # forward expected value of z).
     integrand = cell -> cell.z
-    Es = expectation_vectors(chain, integrand, 3, caches, scratches)
+    Es = expectation_vectors(chain, integrand, 3, buffers)
     @test length(Es) == 3
     # E_0 = [0.0, 1.0] (identity).
     @test Es[1] ≈ [0.0, 1.0]
@@ -72,14 +72,14 @@ end
 @testset "expectation_vectors — chain (Markov ∘ₛ Identity)" begin
     P = [0.8 0.2; 0.2 0.8]
     layout = StateLayout(StateAxis(:z, discrete_finite([0.0, 1.0])))
-    s1 = MarkovAlong(layout; axis = :z, transition = P)
+    s1 = MarkovStage(layout; axis = :z, transition = P)
     s2 = IdentityStage(layout)
     chain = s1 ∘ₛ s2
-    caches, scratches = allocate(chain)
+    buffers = allocate(chain)
     integrand = cell -> cell.z
-    Es = expectation_vectors(chain, integrand, 2, caches, scratches)
+    Es = expectation_vectors(chain, integrand, 2, buffers)
     @test length(Es) == 2
     @test Es[1] ≈ [0.0, 1.0]
-    # The chain's K^T = (IdentityStage K^T) · (MarkovAlong K^T) = I · P.
+    # The chain's K^T = (IdentityStage K^T) · (MarkovStage K^T) = I · P.
     @test Es[2] ≈ P * Es[1] atol = 1e-12
 end

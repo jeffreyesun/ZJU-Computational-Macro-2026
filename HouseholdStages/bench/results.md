@@ -21,30 +21,30 @@ the bench reruns in seconds.
 
 | Stage | lib | ref | ratio |
 |---|---|---|---|
-| MarkovAlong backward | 398 ns | 446 ns | 0.89× |
-| MarkovAlong forward | 399 ns | 448 ns | 0.89× |
-| WealthChange backward | 1.13 μs | 490 ns | 2.31× |
-| WealthChange forward | 672 ns | 711 ns | 0.94× |
-| ConsumptionSavings backward | 51.15 μs | 38.55 μs | 1.33× |
+| MarkovStage backward | 398 ns | 446 ns | 0.89× |
+| MarkovStage forward | 399 ns | 448 ns | 0.89× |
+| WealthChangeStage backward | 1.13 μs | 490 ns | 2.31× |
+| WealthChangeStage forward | 672 ns | 711 ns | 0.94× |
+| ConsumptionSavingsStage backward | 51.15 μs | 38.55 μs | 1.33× |
 | Chain backward+forward | 54.66 μs | 40.58 μs | 1.35× |
 
 ### K-S size (100, 2)
 
 | Stage | lib | ref | ratio |
 |---|---|---|---|
-| MarkovAlong backward | 400 ns | 413 ns | 0.97× |
-| MarkovAlong forward | 416 ns | 348 ns | 1.20× |
-| WealthChange backward | 958 ns | 407 ns | 2.35× |
-| WealthChange forward | 487 ns | 576 ns | 0.85× |
-| ConsumptionSavings backward | 46.00 μs | 39.21 μs | 1.17× |
+| MarkovStage backward | 400 ns | 413 ns | 0.97× |
+| MarkovStage forward | 416 ns | 348 ns | 1.20× |
+| WealthChangeStage backward | 958 ns | 407 ns | 2.35× |
+| WealthChangeStage forward | 487 ns | 576 ns | 0.85× |
+| ConsumptionSavingsStage backward | 46.00 μs | 39.21 μs | 1.17× |
 | Chain backward+forward | 54.15 μs | 42.02 μs | 1.29× |
 
 ### Spatial size (60, 3, 2)
 
 | Stage | lib | ref | ratio |
 |---|---|---|---|
-| Migration backward | 8.84 μs | 7.56 μs | 1.17× |
-| ConsumptionSavings backward (3D) | 76.66 μs | 52.52 μs | 1.46× |
+| MigrationStage backward | 8.84 μs | 7.56 μs | 1.17× |
+| ConsumptionSavingsStage backward (3D) | 76.66 μs | 52.52 μs | 1.46× |
 | Chain backward + forward | 91.05 μs | — | (no ref baseline) |
 
 ## Large sizes (example-driver, `LARGE_BENCH=1`)
@@ -58,30 +58,30 @@ hand-coded reference kernels."
 
 | Stage | lib | ref | ratio |
 |---|---|---|---|
-| MarkovAlong backward | 1.69 μs | 1.97 μs | 0.86× |
-| MarkovAlong forward | 1.92 μs | 1.99 μs | 0.97× |
-| WealthChange backward | 3.57 μs | 2.34 μs | 1.53× |
-| WealthChange forward | 3.42 μs | 3.38 μs | 1.01× |
-| ConsumptionSavings backward | 970.76 μs | 912.76 μs | 1.06× |
+| MarkovStage backward | 1.69 μs | 1.97 μs | 0.86× |
+| MarkovStage forward | 1.92 μs | 1.99 μs | 0.97× |
+| WealthChangeStage backward | 3.57 μs | 2.34 μs | 1.53× |
+| WealthChangeStage forward | 3.42 μs | 3.38 μs | 1.01× |
+| ConsumptionSavingsStage backward | 970.76 μs | 912.76 μs | 1.06× |
 | Chain backward+forward | 969.83 μs | 818.29 μs | 1.19× |
 
 ### K-S size (400, 2)
 
 | Stage | lib | ref | ratio |
 |---|---|---|---|
-| MarkovAlong backward | 1.40 μs | 1.45 μs | 0.97× |
-| MarkovAlong forward | 1.44 μs | 1.46 μs | 0.99× |
-| WealthChange backward | 2.54 μs | 1.55 μs | 1.64× |
-| WealthChange forward | 2.21 μs | 2.20 μs | 1.00× |
-| ConsumptionSavings backward | 587.23 μs | 605.44 μs | 0.97× |
+| MarkovStage backward | 1.40 μs | 1.45 μs | 0.97× |
+| MarkovStage forward | 1.44 μs | 1.46 μs | 0.99× |
+| WealthChangeStage backward | 2.54 μs | 1.55 μs | 1.64× |
+| WealthChangeStage forward | 2.21 μs | 2.20 μs | 1.00× |
+| ConsumptionSavingsStage backward | 587.23 μs | 605.44 μs | 0.97× |
 | Chain backward+forward | 622.80 μs | 546.67 μs | 1.14× |
 
 ### Spatial size (400, 3, 2)
 
 | Stage | lib | ref | ratio |
 |---|---|---|---|
-| Migration backward | 58.71 μs | 51.93 μs | 1.13× |
-| ConsumptionSavings backward (3D) | 2.50 ms | 2.34 ms | 1.07× |
+| MigrationStage backward | 58.71 μs | 51.93 μs | 1.13× |
+| ConsumptionSavingsStage backward (3D) | 2.50 ms | 2.34 ms | 1.07× |
 | Chain backward + forward | 2.58 ms | — | (no ref baseline) |
 
 ## How to read this
@@ -90,11 +90,11 @@ hand-coded reference kernels."
   benchmark sample. Lower is better. `1.0×` = parity with a
   hand-coded kernel; `< 2×` is excellent; `< 4×` is acceptable
   given how much expressiveness the stage abstraction buys.
-- The **`WealthChange backward`** outlier (2.3× at default sizes,
+- The **`WealthChangeStage backward`** outlier (2.3× at default sizes,
   1.5× at large) is the closure-broadcast overhead in
   `_fill_wealth_post!` — the hand-coded reference inlines the
   `(1+r) b + w y` computation. At `N_w = 400` the bottleneck
-  shifts to `ConsumptionSavings.backward`, where the ratio is
+  shifts to `ConsumptionSavingsStage.backward`, where the ratio is
   near 1.0× — the per-element work dominates the closure overhead.
 - **`Chain backward+forward`** is the end-to-end number that matters
   for outer-loop iteration cost. At the example sizes

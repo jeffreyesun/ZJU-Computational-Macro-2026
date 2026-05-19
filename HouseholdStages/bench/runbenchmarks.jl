@@ -76,15 +76,15 @@ function build_aiyagari_chain(n_w::Int, n_z::Int, y_grid::Vector{Float64},
         StateAxis(:wealth, continuous_grid(exp_wgrid(0.0, 100.0, n_w))),
         StateAxis(:income, discrete_finite(y_grid)),
     )
-    shock = MarkovAlong(layout; axis = :income, transition = P_y)
+    shock = MarkovStage(layout; axis = :income, transition = P_y)
     function wp(cell; env)
         e = env[]
         return (1 + e.r) * cell.wealth + e.w * cell.income
     end
-    receipt = WealthChange(layout; wealth_post = wp,
+    receipt = WealthChangeStage(layout; wealth_post = wp,
                                    wealth_axis = :wealth,
                                    closure_deps = (:r, :w))
-    savings = ConsumptionSavings(layout;
+    savings = ConsumptionSavingsStage(layout;
         β = BETA,
         utility = (cell, c; env) -> u_crra_bench(c),
         wealth_axis = :wealth,
@@ -100,9 +100,9 @@ function build_spatial_chain(n_w::Int, n_z::Int, n_l::Int,
         StateAxis(:income,   discrete_finite(y_grid)),
         StateAxis(:location, categorical([Symbol("loc$i") for i in 1:n_l])),
     )
-    shock = MarkovAlong(layout; axis = :income, transition = P_y)
+    shock = MarkovStage(layout; axis = :income, transition = P_y)
     C = SPATIAL_MIG_COST .* (ones(n_l, n_l) .- LinearAlgebra.I(n_l))
-    move = Migration(layout;
+    move = MigrationStage(layout;
         location_axis  = :location,
         migration_cost = C,
         ε              = SPATIAL_EPSILON,
@@ -113,12 +113,12 @@ function build_spatial_chain(n_w::Int, n_z::Int, n_l::Int,
         w = cell.location == :loc1 ? e.w_home : e.w_abroad
         return (1 + r) * cell.wealth + w * cell.income
     end
-    receipt = WealthChange(layout;
+    receipt = WealthChangeStage(layout;
         wealth_post  = wp,
         wealth_axis  = :wealth,
         closure_deps = (:r_home, :r_abroad, :w_home, :w_abroad),
     )
-    savings = ConsumptionSavings(layout;
+    savings = ConsumptionSavingsStage(layout;
         β            = BETA,
         utility      = (cell, c; env) -> u_crra_bench(c),
         wealth_axis  = :wealth,
@@ -150,7 +150,7 @@ function ref_markov_forward!(Λ_post, Λ_pre, P_y_T,
     return Λ_post
 end
 
-# WealthChange backward — hand-coded per-column linear interp.
+# WealthChangeStage backward — hand-coded per-column linear interp.
 function ref_wealthchange_backward!(V_pre, V_end, wgrid, wpost,
                                     ::Val{extrap}) where {extrap}
     # V_pre[wi, zi] = lookup V_end[:, zi] at wpost[wi, zi].
@@ -173,7 +173,7 @@ function ref_wealthchange_forward!(Λ_post, Λ_pre, wgrid, wpost)
     return Λ_post
 end
 
-# ConsumptionSavings backward — hand-coded monotone-policy walk.
+# ConsumptionSavingsStage backward — hand-coded monotone-policy walk.
 function ref_cs_backward!(V_pre, policy, V_end, wgrid, β)
     n_w, n_z = size(V_end)
     for zi in 1:n_z
@@ -205,7 +205,7 @@ function ref_cs_backward!(V_pre, policy, V_end, wgrid, β)
     return V_pre
 end
 
-# Migration backward — hand-coded logit over the location axis for the
+# MigrationStage backward — hand-coded logit over the location axis for the
 # spatial chain. Three-pass log-sum-exp (max for stability, weights,
 # normalise). Reference style: tight inner loop, fixed shapes.
 function ref_migration_backward!(V_pre, prob, V_end, C, ε)
@@ -235,7 +235,7 @@ function ref_migration_backward!(V_pre, prob, V_end, C, ε)
     return V_pre
 end
 
-# ConsumptionSavings backward — 3D version for spatial layout.
+# ConsumptionSavingsStage backward — 3D version for spatial layout.
 function ref_cs_backward_3d!(V_pre, policy, V_end, wgrid, β)
     n_w, n_z, n_l = size(V_end)
     for li in 1:n_l, zi in 1:n_z
@@ -272,14 +272,15 @@ end
 # Benchmark setup helpers
 ###############################################################################
 
-# Configure a chain + caches + scratches + warmed V_end / Λ_pre.
+# Configure a chain + per-stage buffers tuple + warmed V_end / Λ_pre.
+# `buffers` is the chain workspace returned by `allocate(chain)` — a
+# Tuple of per-stage `(; kernel, scratch)` NamedTuples.
 mutable struct BenchSetup
     layout
     shock
     receipt
     savings
-    caches
-    scratches
+    buffers
     V_end :: Matrix{Float64}
     Λ_pre :: Matrix{Float64}
     wpost :: Matrix{Float64}
@@ -288,7 +289,7 @@ mutable struct BenchSetup
     env
 end
 
-# Spatial variant — 3D layout `(wealth, income, location)`, Migration
+# Spatial variant — 3D layout `(wealth, income, location)`, MigrationStage
 # in the chain. Holds everything needed for per-stage and chain
 # benchmarks.
 mutable struct SpatialBenchSetup
@@ -297,8 +298,7 @@ mutable struct SpatialBenchSetup
     move
     receipt
     savings
-    caches
-    scratches
+    buffers
     V_end :: Array{Float64, 3}
     Λ_pre :: Array{Float64, 3}
     wpost :: Array{Float64, 3}
@@ -310,32 +310,32 @@ end
 
 function make_setup(n_w, n_z, y_grid, P_y)
     layout, shock, receipt, savings = build_aiyagari_chain(n_w, n_z, y_grid, P_y)
-    chain  = shock ∘ₛ receipt ∘ₛ savings
-    caches, scratches = allocate(chain)
+    chain   = shock ∘ₛ receipt ∘ₛ savings
+    buffers = allocate(chain)
 
     wgrid = exp_wgrid(0.0, 100.0, n_w)
     V_end = [(b + 1) ^ (1 - SIGMA) / (1 - SIGMA) for b in wgrid, _ in 1:n_z]
     Λ_pre = fill(1.0 / (n_w * n_z), n_w, n_z)
     env   = (; K = 5.0, r = R, w = W)
 
-    # Warm caches by running one backward of the chain at env so kernels
+    # Warm kernels by running one backward of the chain at env so kernels
     # carry sensible policies / wealth_post values for the per-stage
     # benchmarks.
-    backward!(chain, V_end, env, caches, scratches)
+    backward!(chain, V_end, env, buffers)
 
-    # Pull the receipt cache's wealth_post array (post-`(1+r)b + wy`).
-    wpost = caches[2].wealth_post
+    # Pull the receipt kernel's wealth_post array (post-`(1+r)b + wy`).
+    wpost = buffers[2].kernel.wealth_post
 
     return BenchSetup(layout, shock, receipt, savings,
-                      caches, scratches,
+                      buffers,
                       V_end, Λ_pre, wpost, wgrid, P_y, env)
 end
 
 function make_spatial_setup(n_w, n_z, n_l, y_grid, P_y)
     layout, shock, move, receipt, savings =
         build_spatial_chain(n_w, n_z, n_l, y_grid, P_y)
-    chain  = shock ∘ₛ move ∘ₛ receipt ∘ₛ savings
-    caches, scratches = allocate(chain)
+    chain   = shock ∘ₛ move ∘ₛ receipt ∘ₛ savings
+    buffers = allocate(chain)
 
     wgrid = exp_wgrid(0.0, 30.0, n_w)
     V_end = [(b + 1) ^ (1 - SIGMA) / (1 - SIGMA)
@@ -344,13 +344,13 @@ function make_spatial_setup(n_w, n_z, n_l, y_grid, P_y)
     # Two-location calibration; first location plays the "home" role.
     env = (; r_home = 0.04, w_home = 1.0, r_abroad = 0.04, w_abroad = 1.0)
 
-    backward!(chain, V_end, env, caches, scratches)
+    backward!(chain, V_end, env, buffers)
 
-    wpost = caches[3].wealth_post
+    wpost = buffers[3].kernel.wealth_post
     C = SPATIAL_MIG_COST .* (ones(n_l, n_l) .- LinearAlgebra.I(n_l))
 
     return SpatialBenchSetup(layout, shock, move, receipt, savings,
-                             caches, scratches,
+                             buffers,
                              V_end, Λ_pre, wpost, wgrid, P_y, C, env)
 end
 
@@ -363,9 +363,8 @@ function bench_markov_backward(s::BenchSetup)
     shock = s.shock
     V_end = s.V_end
     env   = s.env
-    cache = s.caches[1]
-    scratch = s.scratches[1]
-    return @benchmark backward!($shock, $V_end, $env, $cache, $scratch)
+    buf   = s.buffers[1]
+    return @benchmark backward!($shock, $V_end, $env, $buf)
 end
 
 function bench_markov_backward_ref(s::BenchSetup)
@@ -380,9 +379,8 @@ end
 function bench_markov_forward(s::BenchSetup)
     shock = s.shock
     Λ_pre = s.Λ_pre
-    cache = s.caches[1]
-    scratch = s.scratches[1]
-    return @benchmark forward!($shock, $Λ_pre, $cache, $scratch)
+    buf   = s.buffers[1]
+    return @benchmark forward!($shock, $Λ_pre, $buf)
 end
 
 function bench_markov_forward_ref(s::BenchSetup)
@@ -402,9 +400,8 @@ function bench_wealthchange_backward(s::BenchSetup)
     # any well-typed V_end of the right shape works.
     V_end = s.V_end
     env   = s.env
-    cache = s.caches[2]
-    scratch = s.scratches[2]
-    return @benchmark backward!($receipt, $V_end, $env, $cache, $scratch)
+    buf   = s.buffers[2]
+    return @benchmark backward!($receipt, $V_end, $env, $buf)
 end
 
 function bench_wealthchange_backward_ref(s::BenchSetup)
@@ -418,9 +415,8 @@ end
 function bench_wealthchange_forward(s::BenchSetup)
     receipt = s.receipt
     Λ_pre = s.Λ_pre
-    cache = s.caches[2]
-    scratch = s.scratches[2]
-    return @benchmark forward!($receipt, $Λ_pre, $cache, $scratch)
+    buf   = s.buffers[2]
+    return @benchmark forward!($receipt, $Λ_pre, $buf)
 end
 
 function bench_wealthchange_forward_ref(s::BenchSetup)
@@ -435,9 +431,8 @@ function bench_cs_backward(s::BenchSetup)
     savings = s.savings
     V_end = s.V_end
     env   = s.env
-    cache = s.caches[3]
-    scratch = s.scratches[3]
-    return @benchmark backward!($savings, $V_end, $env, $cache, $scratch)
+    buf   = s.buffers[3]
+    return @benchmark backward!($savings, $V_end, $env, $buf)
 end
 
 function bench_cs_backward_ref(s::BenchSetup)
@@ -457,9 +452,8 @@ function bench_spatial_migration_backward(s::SpatialBenchSetup)
     stage = s.move
     V_end = s.V_end
     env   = s.env
-    cache = s.caches[2]
-    scratch = s.scratches[2]
-    return @benchmark backward!($stage, $V_end, $env, $cache, $scratch)
+    buf   = s.buffers[2]
+    return @benchmark backward!($stage, $V_end, $env, $buf)
 end
 
 function bench_spatial_migration_backward_ref(s::SpatialBenchSetup)
@@ -476,9 +470,8 @@ function bench_spatial_cs_backward(s::SpatialBenchSetup)
     stage = s.savings
     V_end = s.V_end
     env   = s.env
-    cache = s.caches[4]
-    scratch = s.scratches[4]
-    return @benchmark backward!($stage, $V_end, $env, $cache, $scratch)
+    buf   = s.buffers[4]
+    return @benchmark backward!($stage, $V_end, $env, $buf)
 end
 
 function bench_spatial_cs_backward_ref(s::SpatialBenchSetup)
@@ -493,15 +486,15 @@ end
 # Full spatial chain backward+forward — one outer-loop step cost.
 function bench_spatial_chain_pass(s::SpatialBenchSetup)
     chain   = s.shock ∘ₛ s.move ∘ₛ s.receipt ∘ₛ s.savings
-    caches, scratches = allocate(chain)
+    buffers = allocate(chain)
     V_end = s.V_end
     Λ_pre = s.Λ_pre
     env   = s.env
-    backward!(chain, V_end, env, caches, scratches)
-    forward!(chain, Λ_pre, caches, scratches)
+    backward!(chain, V_end, env, buffers)
+    forward!(chain, Λ_pre, buffers)
     return @benchmark begin
-        backward!($chain, $V_end, $env, $caches, $scratches)
-        forward!($chain, $Λ_pre, $caches, $scratches)
+        backward!($chain, $V_end, $env, $buffers)
+        forward!($chain, $Λ_pre, $buffers)
     end
 end
 
@@ -510,16 +503,16 @@ end
 # pass each). This is what an outer-loop step costs.
 function bench_chain_pass(s::BenchSetup)
     chain   = s.shock ∘ₛ s.receipt ∘ₛ s.savings
-    caches, scratches = allocate(chain)
+    buffers = allocate(chain)
     V_end = s.V_end
     Λ_pre = s.Λ_pre
     env   = s.env
     # Warm the chain so kernels are populated.
-    backward!(chain, V_end, env, caches, scratches)
-    forward!(chain, Λ_pre, caches, scratches)
+    backward!(chain, V_end, env, buffers)
+    forward!(chain, Λ_pre, buffers)
     return @benchmark begin
-        backward!($chain, $V_end, $env, $caches, $scratches)
-        forward!($chain, $Λ_pre, $caches, $scratches)
+        backward!($chain, $V_end, $env, $buffers)
+        forward!($chain, $Λ_pre, $buffers)
     end
 end
 
@@ -598,19 +591,19 @@ function run_suite(label::String, s::BenchSetup)
     println("== ", label, " — N_w=", length(s.wgrid), " N_z=", size(s.V_end, 2), " ==")
     results = Pair{String, NTuple{2, Float64}}[]
 
-    push!(results, "MarkovAlong backward" =>
+    push!(results, "MarkovStage backward" =>
         (minimum(bench_markov_backward(s)).time,
          minimum(bench_markov_backward_ref(s)).time))
-    push!(results, "MarkovAlong forward" =>
+    push!(results, "MarkovStage forward" =>
         (minimum(bench_markov_forward(s)).time,
          minimum(bench_markov_forward_ref(s)).time))
-    push!(results, "WealthChange backward" =>
+    push!(results, "WealthChangeStage backward" =>
         (minimum(bench_wealthchange_backward(s)).time,
          minimum(bench_wealthchange_backward_ref(s)).time))
-    push!(results, "WealthChange forward" =>
+    push!(results, "WealthChangeStage forward" =>
         (minimum(bench_wealthchange_forward(s)).time,
          minimum(bench_wealthchange_forward_ref(s)).time))
-    push!(results, "ConsumptionSavings backward" =>
+    push!(results, "ConsumptionSavingsStage backward" =>
         (minimum(bench_cs_backward(s)).time,
          minimum(bench_cs_backward_ref(s)).time))
     push!(results, "Chain backward+forward" =>
@@ -629,10 +622,10 @@ function run_spatial_suite(label::String, s::SpatialBenchSetup)
     println("== ", label, " — N_w=", n_w, " N_z=", n_z, " N_l=", n_l, " ==")
     results = Pair{String, NTuple{2, Float64}}[]
 
-    push!(results, "Migration backward" =>
+    push!(results, "MigrationStage backward" =>
         (minimum(bench_spatial_migration_backward(s)).time,
          minimum(bench_spatial_migration_backward_ref(s)).time))
-    push!(results, "ConsumptionSavings backward (3D)" =>
+    push!(results, "ConsumptionSavingsStage backward (3D)" =>
         (minimum(bench_spatial_cs_backward(s)).time,
          minimum(bench_spatial_cs_backward_ref(s)).time))
 

@@ -3,7 +3,7 @@ using HouseholdStages
 
 # Tests for the two monotone-policy argmax helpers in
 # `src/helper/interpolations.jl` and the corresponding `:sequential` vs
-# `:divide_conquer` paths through `ConsumptionSavings.backward!`.
+# `:divide_conquer` paths through `ConsumptionSavingsStage.backward!`.
 
 @testset "k1_argmax_dc! matches k1_argmax_monotone! on monotone-policy inputs" begin
     # Random-ish but monotone policy: u_slice[a, s] = -|a - target_policy(s)|
@@ -40,7 +40,7 @@ end
     @test policy == target
 end
 
-@testset "ConsumptionSavings — :divide_conquer matches :sequential on the Aiyagari calibration" begin
+@testset "ConsumptionSavingsStage — :divide_conquer matches :sequential on the Aiyagari calibration" begin
     # Small Aiyagari-shape problem; exponential wealth grid; CRRA log utility.
     n_w = 64
     layout = StateLayout(
@@ -49,31 +49,31 @@ end
         StateAxis(:income, discrete_finite([0.6, 1.0, 1.4])),
     )
     u = (cell, c; env) -> log(c)
-    seq = ConsumptionSavings(layout; β = 0.96, utility = u,
+    seq = ConsumptionSavingsStage(layout; β = 0.96, utility = u,
                                        wealth_axis = :wealth,
                                        monotone_search = :sequential)
-    dc  = ConsumptionSavings(layout; β = 0.96, utility = u,
+    dc  = ConsumptionSavingsStage(layout; β = 0.96, utility = u,
                                        wealth_axis = :wealth,
                                        monotone_search = :divide_conquer)
 
     V_end = [0.1 * w_i + 0.05 * y_j for w_i in 1:n_w, y_j in 1:3]
     env   = NamedTuple()
 
-    cache_seq, scratch_seq = allocate(seq)
-    cache_dc,  scratch_dc  = allocate(dc)
-    V_seq = copy(backward!(seq, V_end, env, cache_seq, scratch_seq))
-    V_dc  = copy(backward!(dc,  V_end, env, cache_dc,  scratch_dc))
+    buf_seq = allocate(seq)
+    buf_dc  = allocate(dc)
+    V_seq = copy(backward!(seq, V_end, env, buf_seq))
+    V_dc  = copy(backward!(dc,  V_end, env, buf_dc))
 
     @test seq.policy == dc.policy
     @test V_seq ≈ V_dc atol = 1e-12
 end
 
-@testset "ConsumptionSavings — :divide_conquer rejects unknown search mode" begin
+@testset "ConsumptionSavingsStage — :divide_conquer rejects unknown search mode" begin
     layout = StateLayout(
         StateAxis(:wealth, continuous_grid([0.0, 1.0, 2.0])),
         StateAxis(:y,      discrete_finite([1.0])),
     )
-    @test_throws ErrorException ConsumptionSavings(layout;
+    @test_throws ErrorException ConsumptionSavingsStage(layout;
         β = 0.96,
         utility = (cell, c; env) -> log(c),
         monotone_search = :something_else,

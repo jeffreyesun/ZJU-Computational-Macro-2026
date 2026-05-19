@@ -7,12 +7,6 @@
 # `HouseholdStages.solve_steady_state_given_env!`; the outer tatonnement
 # loop is rolled here — the library leaves "close-the-model" outer
 # loops to consumers (see `PROJECT_PLAN.md` Decisions log 2026-05-18).
-#
-# Bisection isn't applicable here: bisection's extreme-K probes push
-# r as high as 0.30, and `WealthChange.backward`'s linear V
-# extrapolation amplifies V faster than `1/β` at those rates, breaking
-# the Bellman contraction. Tatonnement stays near the candidate K
-# throughout, never visiting that high-r regime.
 
 include("model.jl")
 
@@ -20,7 +14,7 @@ using Printf
 
 """
 Solve the K-S deterministic steady state by damped tatonnement on K
-at constant TFP `A`. Hard-argmax `ConsumptionSavings` produces a step
+at constant TFP `A`. Hard-argmax `ConsumptionSavingsStage` produces a step
 function in K; K-S sits at `β(1+r) ≈ 1`, so a one-grid-step policy
 switch moves `K_supplied` by ~20%. Default `rtol = 0.05` accepts the
 floor and `update_speed = 0.01` damps heavily to walk through it.
@@ -32,28 +26,29 @@ function ks_steady_state(p = ks_params;
                          rtol             = 5e-2,
                          max_iter         = 500,
                          verbosity        = 1)
-    hh   = ks_household(p)
-    caches, scratches = allocate(hh)
-    dims = layout_size(ks_layout(p))
-    V    = zeros(Float64, dims...)
-    Λ    = fill(1.0 / prod(dims), dims...)
+    hh      = ks_household(p)
+    buffers = allocate(hh)
 
     K = K_init
     iterations = 0
     K_err = Inf
     residual_history = Float64[]
+    V, Λ = nothing, nothing   # warm-start placeholders
 
     while iterations < max_iter
         env  = (; K, A, ks_prices(K, A, p)...)
-        info = solve_steady_state_given_env!(hh, env, V, Λ, caches, scratches)
-        V, Λ = info.V, info.Λ
+        res = isnothing(V) ?
+            solve_steady_state_given_env!(hh, env, buffers) :
+            solve_steady_state_given_env!(hh, env, buffers;
+                                          V_init = V, Λ_init = Λ)
+        (; V, Λ, vfi_iters, lambda_iters) = res
 
         K_supplied = compute_moments(hh, env).K_supplied
         K_err = abs(K_supplied - K) / K
         push!(residual_history, K_err)
         iterations += 1
 
-        verbosity > 0 && @printf "  iter %d: K = %.4f → K_supplied = %.4f, K_err = %.6f, VFI iters = %d, Λ iters = %d\n" iterations K K_supplied K_err info.vfi_iters info.lambda_iters
+        verbosity > 0 && @printf "  iter %d: K = %.4f → K_supplied = %.4f, K_err = %.6f, VFI iters = %d, Λ iters = %d\n" iterations K K_supplied K_err vfi_iters lambda_iters
 
         K_err <= rtol && break
 

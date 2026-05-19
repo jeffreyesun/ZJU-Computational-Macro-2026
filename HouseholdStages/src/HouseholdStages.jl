@@ -28,22 +28,22 @@ export
     # Stage dependency machinery
     static_env_deps, effective_env_slice, validate_env, chain_env_names,
     # Concrete stages
-    MarkovAlong,
-    Argmax, LogitChoice,
-    Migration,
-    WealthChange,
-    AssetPriceChange,
-    ConsumptionSavings,
-    ForgetfulSum,
+    MarkovStage,
+    ArgmaxStage, LogitChoiceStage,
+    MigrationStage,
+    WealthChangeStage,
+    AssetPriceChangeStage,
+    ConsumptionSavingsStage,
+    ForgetfulSumStage,
     IdentityStage,
     UtilityStage,
-    BorrowingConstraint,
+    BorrowingConstraintStage,
     # Composition
-    StageChain, ∘ₛ,
+    ChainStage, ∘ₛ,
     # Product
     ProductStage, product, ×ₛ, replicate_age,
-    # Moments
-    MomentSpec, at_end, lift_moments, MomentedChain, compute_moments,
+    # Moments (lift_moments returns a ChainStage with the `moments` field populated)
+    MomentSpec, at_end, lift_moments, compute_moments,
     # Aggregate-Jacobian utilities (sequence-space)
     expectation_vectors, build_F, J_from_F,
     # Lifts

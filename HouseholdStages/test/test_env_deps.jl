@@ -2,27 +2,30 @@ using Test
 using HouseholdStages
 
 @testset "static_env_deps defaults to empty NamedTuple" begin
-    @test static_env_deps(MarkovAlong) === NamedTuple()
-    @test static_env_deps(Argmax) === NamedTuple()
-    @test static_env_deps(LogitChoice) === NamedTuple()
-    @test static_env_deps(ForgetfulSum) === NamedTuple()
+    @test static_env_deps(MarkovStage) === NamedTuple()
+    @test static_env_deps(ArgmaxStage) === NamedTuple()
+    @test static_env_deps(LogitChoiceStage) === NamedTuple()
+    @test static_env_deps(ForgetfulSumStage) === NamedTuple()
     @test static_env_deps(IdentityStage) === NamedTuple()
 end
 
-@testset "effective_env_slice picks up closure_deps" begin
-    layout = StateLayout(StateAxis(:a, discrete_finite([1, 2])))
-    stage = Argmax(layout;
+@testset "effective_env_slice is empty when closures aren't introspected" begin
+    # User closures read `env.bonus`, but the package no longer requires
+    # `closure_deps` to be declared. effective_env_slice reflects only
+    # static_env_deps + swept Param keys, so a stage whose env reads
+    # flow exclusively through closures has an empty slice.
+    layout = StateLayout(StateAxis(:a, [1, 2]))
+    stage = ArgmaxStage(layout;
         choice_axis    = :a,
         flow_payoff    = (cell, a; env) -> (a == 1 ? 0.0 : env.bonus),
         next_state_idx = (cell, a) -> a,
-        closure_deps   = (:bonus,),
     )
-    @test :bonus in effective_env_slice(stage)
+    @test isempty(effective_env_slice(stage))
 end
 
 @testset "effective_env_slice picks up swept Param" begin
-    layout = StateLayout(StateAxis(:a, discrete_finite([1, 2])))
-    stage = LogitChoice(layout;
+    layout = StateLayout(StateAxis(:a, [1, 2]))
+    stage = LogitChoiceStage(layout;
         choice_axis    = :a,
         flow_payoff    = (cell, a; env) -> Float64(a),
         next_state_idx = (cell, a) -> a,
@@ -31,9 +34,9 @@ end
     @test :ξ in effective_env_slice(stage)
 end
 
-@testset "validate_env catches missing fields" begin
-    layout = StateLayout(StateAxis(:a, discrete_finite([1, 2])))
-    stage = LogitChoice(layout;
+@testset "validate_env catches missing sweep keys" begin
+    layout = StateLayout(StateAxis(:a, [1, 2]))
+    stage = LogitChoiceStage(layout;
         choice_axis    = :a,
         flow_payoff    = (cell, a; env) -> Float64(a),
         next_state_idx = (cell, a) -> a,
@@ -43,26 +46,23 @@ end
     @test validate_env(stage, (ξ = 0.5,)) === nothing
 end
 
-@testset "chain_env_names merges per-stage slices" begin
+@testset "chain_env_names merges per-stage swept-Param slices" begin
     P = [0.6 0.4; 0.25 0.75]
-    layout = StateLayout(StateAxis(:a, discrete_finite([1, 2])))
-    s1 = MarkovAlong(layout; axis = :a, transition = P)
-    s2 = LogitChoice(layout;
+    layout = StateLayout(StateAxis(:a, [1, 2]))
+    s1 = MarkovStage(layout; axis = :a, transition = P)
+    s2 = LogitChoiceStage(layout;
         choice_axis    = :a,
-        flow_payoff    = (cell, a; env) -> (a == 1 ? 0.0 : env.bonus),
+        flow_payoff    = (cell, a; env) -> Float64(a),
         next_state_idx = (cell, a) -> a,
         ε              = Param(:ξ),
-        closure_deps   = (:bonus,),
     )
     chain = s1 ∘ₛ s2
-    names = chain_env_names(chain)
-    @test :ξ in names
-    @test :bonus in names
+    @test :ξ in chain_env_names(chain)
 end
 
 @testset "Param mode-flip updates effective slice" begin
-    layout = StateLayout(StateAxis(:a, discrete_finite([1, 2])))
-    stage = LogitChoice(layout;
+    layout = StateLayout(StateAxis(:a, [1, 2]))
+    stage = LogitChoiceStage(layout;
         choice_axis    = :a,
         flow_payoff    = (cell, a; env) -> Float64(a),
         next_state_idx = (cell, a) -> a,

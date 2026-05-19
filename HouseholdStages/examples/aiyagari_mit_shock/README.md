@@ -3,7 +3,7 @@
 Aiyagari household block under a one-time unanticipated TFP shock with
 AR(1) decay back to steady state. Demonstrates two distinct uses of the
 `HouseholdStages` package on the canonical L03 / L04 three-stage
-decomposition `IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavings`:
+decomposition `IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage`:
 
 1. **`transition.jl`** — straight perfect-foresight transition by
    damped Picard on the path of aggregate capital `K_t`.
@@ -50,7 +50,7 @@ post-`N_w = 400`). `K_path[1] ≈ 5.73` (impact), peaking around
 `K[5] ≈ 5.86`, decaying back to `K_ss ≈ 5.69` by the end of the
 horizon. Larger damping
 (≥ 0.3) oscillates near the impact period and fails to converge — the
-new chain's `WealthChange ∘ₛ ConsumptionSavings` diffuses mass more
+new chain's `WealthChangeStage ∘ₛ ConsumptionSavingsStage` diffuses mass more
 slowly through `convert_distribution!`'s share-based push than the
 old single-stage `GridSavings`, so the K-supplied response lags the
 K-update more, and heavier damping is needed for stability.
@@ -86,12 +86,12 @@ chain:
 
 ### Library prerequisites
 
-The new chain uses `WealthChange` and `ConsumptionSavings` in place
+The new chain uses `WealthChangeStage` and `ConsumptionSavingsStage` in place
 of the old `GridSavings`. `expectation_vectors` iterates the chain's
 `forward_adjoint!` — so both stages must implement that adjoint. They
-do: `ConsumptionSavings.forward_adjoint!` is a sparse gather along
+do: `ConsumptionSavingsStage.forward_adjoint!` is a sparse gather along
 the policy (identical in structure to `GridSavings`);
-`WealthChange.forward_adjoint!` is a share-weighted gather (the dual
+`WealthChangeStage.forward_adjoint!` is a share-weighted gather (the dual
 of `convert_distribution!`'s share-based scatter), implemented in
 `HouseholdStages/src/lifts/jacobian.jl` as part of the 2026-05-15
 refactor.
@@ -101,14 +101,14 @@ refactor.
 A natural validation is to compare `J[t, s]` from the SSJ pipeline
 against finite-difference perturbation of the household chain at a
 known steady state. **For an Aiyagari chain whose savings stage is
-hard-argmax `ConsumptionSavings`, a small-`ε` finite difference
+hard-argmax `ConsumptionSavingsStage`, a small-`ε` finite difference
 produces zero**: the integer policy is locally invariant to sub-grid
 price perturbations. Per-stage reverse-mode adjoints in
 `lift_jacobian.jl` handle this via the envelope theorem (subgradient
 at boundary cells); the SSJ pipeline inherits the same property.
 
 A meaningful FD cross-check requires a smoothed choice stage —
-`LogitChoice` with a non-trivial `ε`. That's a natural variant to
+`LogitChoiceStage` with a non-trivial `ε`. That's a natural variant to
 write next; this example does not include it.
 
 ## Files

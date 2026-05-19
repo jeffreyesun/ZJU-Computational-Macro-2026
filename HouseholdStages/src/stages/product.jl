@@ -50,7 +50,7 @@ function product(stages::AbstractStage...; axis::Symbol = :group,
     V_fused = zeros(T, dims_fused)
     Λ_fused = zeros(T, dims_fused)
 
-    # If every component is a MarkovAlong stage and `use_views` is on,
+    # If every component is a MarkovStage stage and `use_views` is on,
     # rebuild components with view-buffers into the fused tensors so
     # backward!/forward! write directly into the fused tensor (zero copies).
     # Other stage types currently keep the copy-based path; they can be
@@ -83,14 +83,14 @@ end
 # View-buffer support per stage type. Extend by adding more
 # `_supports_view_buffers` / `_rebuild_with_view_buffers` methods.
 _supports_view_buffers(::Type) = false
-_supports_view_buffers(::Type{<:MarkovAlong})   = true
+_supports_view_buffers(::Type{<:MarkovStage})   = true
 _supports_view_buffers(::Type{<:IdentityStage}) = true
-_supports_view_buffers(::Type{<:ForgetfulSum})  = true
-_supports_view_buffers(::Type{<:Argmax})        = true
-_supports_view_buffers(::Type{<:LogitChoice})   = true
+_supports_view_buffers(::Type{<:ForgetfulSumStage})  = true
+_supports_view_buffers(::Type{<:ArgmaxStage})        = true
+_supports_view_buffers(::Type{<:LogitChoiceStage})   = true
 
-function _rebuild_with_view_buffers(s::MarkovAlong, V_slice, Λ_slice)
-    return MarkovAlong(s.input_layout;
+function _rebuild_with_view_buffers(s::MarkovStage, V_slice, Λ_slice)
+    return MarkovStage(s.input_layout;
                        axis       = s.axis,
                        transition = s.transition,
                        V_start    = V_slice,
@@ -104,7 +104,7 @@ function _rebuild_with_view_buffers(s::IdentityStage, V_slice, Λ_slice)
                          Λ_end        = Λ_slice)
 end
 
-# Note: `ForgetfulSum` is a layout-changing stage with `V_start` of
+# Note: `ForgetfulSumStage` is a layout-changing stage with `V_start` of
 # input-layout shape and `Λ_end` of output-layout shape (different).
 # Inside a product, the fused tensor has the *input* layout extended
 # by the product axis — so V_slice (along product axis) has
@@ -115,33 +115,31 @@ end
 # Λ_end shape. We fall back to a fresh allocation for Λ_end in this
 # case — V_start uses a view, Λ_end is its own array. Half the
 # copying is still saved.
-function _rebuild_with_view_buffers(s::ForgetfulSum, V_slice, Λ_slice)
+function _rebuild_with_view_buffers(s::ForgetfulSumStage, V_slice, Λ_slice)
     # Λ_slice has the wrong shape (input-layout slice, not output);
-    # ignore it and let ForgetfulSum allocate Λ_end fresh.
-    return ForgetfulSum(s.input_layout;
+    # ignore it and let ForgetfulSumStage allocate Λ_end fresh.
+    return ForgetfulSumStage(s.input_layout;
                         forget_axis  = s.forget_axis,
                         element_type = eltype(V_slice),
                         V_start      = V_slice)
 end
 
-function _rebuild_with_view_buffers(s::Argmax, V_slice, Λ_slice)
-    return Argmax(s.input_layout;
+function _rebuild_with_view_buffers(s::ArgmaxStage, V_slice, Λ_slice)
+    return ArgmaxStage(s.input_layout;
                   choice_axis    = s.choice_axis,
                   flow_payoff    = s.flow_payoff,
                   next_state_idx = s.next_state_idx,
-                  closure_deps   = s.closure_deps,
                   element_type   = eltype(V_slice),
                   V_start        = V_slice,
                   Λ_end          = Λ_slice)
 end
 
-function _rebuild_with_view_buffers(s::LogitChoice, V_slice, Λ_slice)
-    return LogitChoice(s.input_layout;
+function _rebuild_with_view_buffers(s::LogitChoiceStage, V_slice, Λ_slice)
+    return LogitChoiceStage(s.input_layout;
                        choice_axis    = s.choice_axis,
                        flow_payoff    = s.flow_payoff,
                        next_state_idx = s.next_state_idx,
                        ε              = s.ε,
-                       closure_deps   = s.closure_deps,
                        element_type   = eltype(V_slice),
                        V_start        = V_slice,
                        Λ_end          = Λ_slice)
@@ -180,21 +178,18 @@ end
 # Allocate #
 #----------#
 
-function allocate(ps::ProductStage{Stages, T},
-                  ::Type{T2} = T) where {Stages, T, T2}
-    per = map(s -> allocate(s, T2), ps.components)
-    kernels    = map(first, per)
-    scratches = map(last, per)
-    return (kernels, scratches)
+# A product's workspace mirrors the chain shape: a `Tuple` of per-component
+# `(; kernel, scratch)` bundles. `backward!` / `forward!` pass `buffers[i]`
+# through to each component without unpacking.
+function allocate(ps::ProductStage, ::Type{T2} = eltype(ps.V_start)) where {T2}
+    return map(s -> allocate(s, T2), ps.components)
 end
 
 # Backward (per-component) #
 #--------------------------#
 
 function backward!(ps::ProductStage{Stages, T, Nfused},
-                   V_end::AbstractArray{T, Nfused},
-                   env,
-                   kernels::Tuple, scratches::Tuple) where {Stages, T, Nfused}
+                   V_end, env, buffers) where {Stages, T, Nfused}
     n = ps.axis_size
     # Detect once whether components use views into the fused tensor.
     # If yes, backward!(component, V_slice, ...) writes the result
@@ -202,8 +197,7 @@ function backward!(ps::ProductStage{Stages, T, Nfused},
     views_into_fused = ps.components[1].V_start isa SubArray
     for i in 1:n
         V_slice = selectdim(V_end, Nfused, i)
-        V_start_comp = backward!(ps.components[i], V_slice, env,
-                                 kernels[i], scratches[i])
+        V_start_comp = backward!(ps.components[i], V_slice, env, buffers[i])
         if !views_into_fused
             selectdim(ps.V_start, Nfused, i) .= V_start_comp
         end
@@ -215,15 +209,12 @@ end
 #-------------------------#
 
 function forward!(ps::ProductStage{Stages, T, Nfused},
-                  Λ_start::AbstractArray{T, Nfused},
-                  kernels::Tuple, scratches::Tuple,
-                  moments = nothing) where {Stages, T, Nfused}
+                  Λ_start, buffers, moments = nothing) where {Stages, T, Nfused}
     n = ps.axis_size
     views_into_fused = ps.components[1].Λ_end isa SubArray
     for i in 1:n
         Λ_slice = selectdim(Λ_start, Nfused, i)
-        Λ_end_comp = forward!(ps.components[i], Λ_slice,
-                              kernels[i], scratches[i], moments)
+        Λ_end_comp = forward!(ps.components[i], Λ_slice, buffers[i], moments)
         if !views_into_fused
             selectdim(ps.Λ_end, Nfused, i) .= Λ_end_comp
         end

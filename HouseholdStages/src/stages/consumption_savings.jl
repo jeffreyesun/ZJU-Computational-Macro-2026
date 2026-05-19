@@ -32,19 +32,18 @@ under a violation, `:divide_conquer` may converge to a different local
 optimum on a non-monotone cell.
 
 This stage is the "consumption-savings" piece of the L03 / L04
-decomposition: pair it with a [`WealthChange`](@ref) for income receipt
+decomposition: pair it with a [`WealthChangeStage`](@ref) for income receipt
 to recover the Aiyagari period structure
-`IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavings`.
+`IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage`.
 """
-struct ConsumptionSavings{F_u,
+struct ConsumptionSavingsStage{F_u,
                           LIn<:StateLayout, LOut<:StateLayout,
-                          T<:Real, N, D, AV<:AbstractArray{T,N},
+                          T<:Real, N, AV<:AbstractArray{T,N},
                           Search} <: AbstractStage
     β               :: Param{T}
     utility         :: F_u
     wealth_axis     :: Symbol
     wealth_dim      :: Int
-    closure_deps    :: NTuple{D, Symbol}
     input_layout    :: LIn
     output_layout   :: LOut
     V_start         :: AV
@@ -54,25 +53,23 @@ struct ConsumptionSavings{F_u,
 end
 
 """
-    ConsumptionSavings(layout; β, utility, wealth_axis=:wealth,
-                                  closure_deps=(),
-                                  monotone_search=:sequential) -> ConsumptionSavings
+    ConsumptionSavingsStage(layout; β, utility, wealth_axis=:wealth,
+                                  monotone_search=:sequential) -> ConsumptionSavingsStage
 
-Construct a [`ConsumptionSavings`](@ref) stage on `layout`. `utility` is
+Construct a [`ConsumptionSavingsStage`](@ref) on `layout`. `utility` is
 `(cell, c; env) -> T`; `β` is a [`Param`](@ref) or a raw number;
 `monotone_search` is `:sequential` (default) or `:divide_conquer` — see
 the struct docstring for the MPS caveat.
 """
-function ConsumptionSavings(layout::StateLayout;
+function ConsumptionSavingsStage(layout::StateLayout;
                             β,
                             utility,
                             wealth_axis::Symbol = :wealth,
-                            closure_deps::NTuple{D, Symbol} = (),
                             monotone_search::Symbol = :sequential,
                             element_type::Union{Type, Nothing} = nothing,
-                            Λ_end::Union{Nothing, AbstractArray}  = nothing) where {D}
+                            Λ_end::Union{Nothing, AbstractArray}  = nothing)
     monotone_search in (:sequential, :divide_conquer) ||
-        error("ConsumptionSavings: monotone_search must be :sequential or " *
+        error("ConsumptionSavingsStage: monotone_search must be :sequential or " *
               ":divide_conquer, got :$monotone_search")
     wealth_dim = axis_position(layout, wealth_axis)
     β_param = β isa Param ? β : Param(Float64(β))
@@ -87,30 +84,26 @@ function ConsumptionSavings(layout::StateLayout;
 
     T = @something element_type T_default
 
-    dims = layout_size(layout)
-    Vs   = zeros(T, dims)
-    Λe   = @something Λ_end zeros(T, dims)
-
-    @assert typeof(Vs) === typeof(Λe) "ConsumptionSavings: V_start and Λ_end must have the same concrete array type"
-    
-    policy = zeros(Int, dims)
+    # _alloc_VΛ defaults V_start to zeros(T, dims), which matches the
+    # original behaviour (V_start kwarg was never accepted here — only
+    # Λ_end). Pass `nothing` for V_start so the helper allocates.
+    (; Vs, Λe) = _alloc_VΛ(layout, T, nothing, Λ_end)
+    policy = zeros(Int, size(Vs))
     ms_val = Val(monotone_search)
 
-    return ConsumptionSavings{typeof(utility),
+    return ConsumptionSavingsStage{typeof(utility),
                               typeof(layout), typeof(layout),
-                              T, length(dims), D, typeof(Vs),
+                              T, ndims(Vs), typeof(Vs),
                               typeof(ms_val)}(
-        β_param, utility, wealth_axis, wealth_dim, closure_deps,
+        β_param, utility, wealth_axis, wealth_dim,
         layout, layout, Vs, Λe, policy, ms_val,
     )
 end
 
-static_env_deps(::Type{<:ConsumptionSavings}) = NamedTuple()
+static_env_deps(::Type{<:ConsumptionSavingsStage}) = NamedTuple()
 
-function allocate(stage::ConsumptionSavings{F_u,LIn,LOut,T},
-                  ::Type{T2} = T) where {F_u,LIn,LOut,T,T2}
-    return ((policy = stage.policy,), nothing)
-end
+allocate(stage::ConsumptionSavingsStage, ::Type = Float64) =
+    (; kernel = (; policy = stage.policy), scratch = nothing)
 
 # Backward (monotone-policy argmax) #
 #-----------------------------------#
@@ -118,7 +111,7 @@ end
 # argmax and runs up to `n_w`. Total work bounded above by O(n_w · n_w);
 # typically much less when policy advances rapidly.
 function _cs_backward_slice!(::Type{Val{:sequential}},
-                             stage::ConsumptionSavings{F_u,LIn,LOut,T,N},
+                             stage::ConsumptionSavingsStage{F_u,LIn,LOut,T,N},
                              V_end, env, V_start, policy,
                              layout, wdim, wgrid, n_w, β,
                              names, axvals, dims,
@@ -161,7 +154,7 @@ end
 # each midpoint's argmax to bound its left and right sub-problems. Total
 # work `O(n_w log n_w)` under the monotone-policy assumption.
 function _cs_backward_slice!(::Type{Val{:divide_conquer}},
-                             stage::ConsumptionSavings{F_u,LIn,LOut,T,N},
+                             stage::ConsumptionSavingsStage{F_u,LIn,LOut,T,N},
                              V_end, env, V_start, policy,
                              layout, wdim, wgrid, n_w, β,
                              names, axvals, dims,
@@ -208,25 +201,22 @@ function _cs_backward_slice!(::Type{Val{:divide_conquer}},
     return
 end
 
-function backward!(stage::ConsumptionSavings{F_u,LIn,LOut,T,N,D,AV,Search},
-                   V_end::AbstractArray{T,N},
-                   env, kernel, scratch) where {F_u,LIn,LOut,T,N,D,AV,Search}
-    layout   = stage.input_layout
-    wdim     = stage.wealth_dim
-    wgrid    = axisvalues(layout.axes[wdim])
-    n_w      = length(wgrid)
-    β        = resolve(stage.β, env)
-    V_start  = stage.V_start
-    policy   = stage.policy
+function backward!(stage::ConsumptionSavingsStage{F_u,LIn,LOut,T,N,AV,Search},
+                   V_end, env, buffers) where {F_u,LIn,LOut,T,N,AV,Search}
+    (; kernel, scratch) = buffers
+    (; input_layout, wealth_dim, V_start, policy) = stage
+    wgrid = axisvalues(input_layout.axes[wealth_dim])
+    n_w   = length(wgrid)
+    β     = resolve(stage.β, env)
 
-    names   = axisnames(layout)
-    axvals  = ntuple(i -> axisvalues(layout.axes[i]), N)
-    dims    = layout_size(layout)
-    other_sizes = ntuple(i -> i == wdim ? 1 : dims[i], N)
+    names   = axisnames(input_layout)
+    axvals  = ntuple(i -> axisvalues(input_layout.axes[i]), N)
+    dims    = layout_size(input_layout)
+    other_sizes = ntuple(i -> i == wealth_dim ? 1 : dims[i], N)
 
     for other_ci in CartesianIndices(other_sizes)
         _cs_backward_slice!(Search, stage, V_end, env, V_start, policy,
-                            layout, wdim, wgrid, n_w, β,
+                            input_layout, wealth_dim, wgrid, n_w, β,
                             names, axvals, dims, other_ci.I)
     end
     return V_start
@@ -234,23 +224,19 @@ end
 
 # Forward #
 #---------#
-function forward!(stage::ConsumptionSavings{F_u,LIn,LOut,T,N},
-                  Λ_start::AbstractArray{T,N},
-                  kernel, scratch,
-                  moments = nothing) where {F_u,LIn,LOut,T,N}
-    layout = stage.input_layout
-    wdim   = stage.wealth_dim
-    Λ_end  = stage.Λ_end
-    policy = stage.policy
+function forward!(stage::ConsumptionSavingsStage, Λ_start, buffers, moments = nothing)
+    (; kernel, scratch) = buffers
+    (; input_layout, wealth_dim, Λ_end, policy) = stage
+    T = eltype(Λ_end)
 
     fill!(Λ_end, zero(T))
-    for (idx, _) in cells(layout)
+    for (idx, _) in cells(input_layout)
         in_idxs = Tuple(idx)
         ci_in   = CartesianIndex(in_idxs)
         mass    = Λ_start[ci_in]
         iszero(mass) && continue
         a_i = policy[ci_in]
-        out_idxs = Base.setindex(in_idxs, a_i, wdim)
+        out_idxs = Base.setindex(in_idxs, a_i, wealth_dim)
         Λ_end[CartesianIndex(out_idxs)] += mass
     end
     return Λ_end

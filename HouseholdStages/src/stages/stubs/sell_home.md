@@ -26,14 +26,14 @@ This stage is fundamentally **three operations fused**:
 
 Each of the three operations has a primitive in the library:
 
-- (1) Wealth change → `WealthChange` (closure-based).
-- (2) Logit choice over `{sell, keep}` → `LogitChoice` (categorical
+- (1) Wealth change → `WealthChangeStage` (closure-based).
+- (2) Logit choice over `{sell, keep}` → `LogitChoiceStage` (categorical
   choice axis).
-- (3) Axis collapse on `:h` → not directly; `ForgetfulSum` drops an
+- (3) Axis collapse on `:h` → not directly; `ForgetfulSumStage` drops an
   axis entirely, but here we want "homeowners map to `h = 1`," which
   is a *partial* collapse depending on the choice outcome.
 
-A naïve split `WealthChange ∘ₛ LogitChoice(:keep_or_sell) ∘ₛ <collapse>`
+A naïve split `WealthChangeStage ∘ₛ LogitChoiceStage(:keep_or_sell) ∘ₛ <collapse>`
 loses the fusion: the wealth change applies *only to sellers* (not to
 non-sellers), so it has to be conditional on the choice. The library
 doesn't currently have a way to make stage (1) conditional on the
@@ -70,9 +70,9 @@ action)]` for each action and takes the log-sum-exp; the forward pass
 scatters mass per the resulting probability tensor, applying the
 state transitions.
 
-This generalises `LogitChoice` (where the only state change is the
+This generalises `LogitChoiceStage` (where the only state change is the
 choice axis itself) and gates against the wealth-axis interpolation
-that `WealthChange` provides (state transitions that change a
+that `WealthChangeStage` provides (state transitions that change a
 continuous axis need the same `convert_distribution!` machinery).
 
 ## Why this is delicate
@@ -84,7 +84,7 @@ The fused stage mixes:
 - A **categorical transition** (h, requiring an integer-policy
   scatter).
 
-It's not just "do `LogitChoice` then `WealthChange`" because the
+It's not just "do `LogitChoiceStage` then `WealthChangeStage`" because the
 wealth change is per-action: the backward log-sum-exp has to evaluate
 `V_end` at the *transitioned* state, which means interpolating along
 wealth for the `sell` action while exact-indexing along h for both

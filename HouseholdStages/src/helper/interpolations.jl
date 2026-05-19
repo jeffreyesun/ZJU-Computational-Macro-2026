@@ -26,7 +26,7 @@ Linearly interpolate `(x1, y1)` onto `x2`, writing into `y2`. Both grids
 must be sorted. `extrap` controls left-extrapolation when `x2[i] < x1[1]`:
 `:linear` extends the leftmost slope, `:clip` snaps to `y1[1]`, and
 `-Inf` marks the point unreachable (used to flag infeasible continuation
-states by [`WealthChange`](@ref) backward passes).
+states by [`WealthChangeStage`](@ref) backward passes).
 """
 function reinterpolate!(y2::AbstractVector, y1::AbstractVector,
                         x1::AbstractVector, x2::AbstractVector,

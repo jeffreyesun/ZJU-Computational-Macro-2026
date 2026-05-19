@@ -14,7 +14,7 @@ collection of non-location state values (wealth, income, …). The
 continuation value at the destination is `V_end[j, s]`; the value of
 locating at origin `i` is then the log-sum-exp.
 
-This is the same kernel as a [`LogitChoice`](@ref) over the location
+This is the same kernel as a [`LogitChoiceStage`](@ref) over the location
 axis with `flow_payoff(cell, dest) = -C[cell.location_idx, dest_idx]`,
 but the API is simpler: pass the cost matrix and `ε` as data, not as
 closures. The cost matrix is static on the stage; `ε` can be a literal
@@ -23,7 +23,7 @@ or a Symbol-valued sweep key via [`Param`](@ref).
 Construction:
 
 ```julia
-stage = Migration(layout;
+stage = MigrationStage(layout;
     location_axis  = :location,
     migration_cost = [0.0 0.5; 0.5 0.0],   # (n_loc × n_loc)
     ε              = 5.0,
@@ -35,19 +35,18 @@ entries are the "move" cost from row to column. The matrix must be
 shape `(n_loc, n_loc)` where `n_loc` is the layout's location-axis
 size. The matrix is stored on the struct and shared across all
 non-location cells; if a per-cell cost is required, fall back to
-[`LogitChoice`](@ref) with a `flow_payoff` closure.
+[`LogitChoiceStage`](@ref) with a `flow_payoff` closure.
 
-Forward / backward / adjoints mirror [`LogitChoice`](@ref); the kernel
+Forward / backward / adjoints mirror [`LogitChoiceStage`](@ref); the kernel
 stores the full `(cell..., destination)` probability tensor populated
 by the backward pass.
 """
-struct Migration{Cmat<:AbstractMatrix, T<:Real, N, D,
+struct MigrationStage{Cmat<:AbstractMatrix, T<:Real, N,
                  L<:StateLayout, AV<:AbstractArray{T,N}} <: AbstractStage
     location_axis  :: Symbol
     location_dim   :: Int
     migration_cost :: Cmat
     ε              :: Param{T}
-    closure_deps   :: NTuple{D, Symbol}
     input_layout   :: L
     output_layout  :: L
     V_start        :: AV
@@ -55,47 +54,42 @@ struct Migration{Cmat<:AbstractMatrix, T<:Real, N, D,
 end
 
 """CLAUDE
-Construct a [`Migration`](@ref) stage on `layout`. `migration_cost` is
+Construct a [`MigrationStage`](@ref) on `layout`. `migration_cost` is
 the `(n_loc, n_loc)` cost matrix (row = origin, column = destination);
 `ε` is a `Param{T}` or raw number for the Gumbel scale.
 """
-function Migration(layout::StateLayout;
+function MigrationStage(layout::StateLayout;
                    location_axis::Symbol = :location,
                    migration_cost::AbstractMatrix,
                    ε,
-                   closure_deps::NTuple{D, Symbol} = (),
                    element_type::Union{Type, Nothing} = nothing,
                    V_start::Union{Nothing, AbstractArray} = nothing,
-                   Λ_end::Union{Nothing, AbstractArray}   = nothing) where {D}
+                   Λ_end::Union{Nothing, AbstractArray}   = nothing)
     location_dim = axis_position(layout, location_axis)
     n_loc = axissize(layout.axes[location_dim])
     size(migration_cost) == (n_loc, n_loc) ||
-        error("Migration: cost matrix has shape $(size(migration_cost)), " *
+        error("MigrationStage: cost matrix has shape $(size(migration_cost)), " *
               "expected ($n_loc, $n_loc) for axis :$location_axis of size $n_loc")
     ε_param = ε isa Param ? ε : Param(Float64(ε))
     T_default = let v = ε_param.val
         v isa Symbol ? Float64 : (typeof(v) <: Real ? typeof(v) : Float64)
     end
     T = @something element_type T_default
-    dims = layout_size(layout)
-    Vs   = @something V_start zeros(T, dims)
-    Λe   = @something Λ_end   zeros(T, dims)
-    @assert typeof(Vs) === typeof(Λe) "Migration: V_start and Λ_end must have the same concrete array type"
-    return Migration{typeof(migration_cost), T, length(dims), D,
+    (; Vs, Λe) = _alloc_VΛ(layout, T, V_start, Λ_end)
+    return MigrationStage{typeof(migration_cost), T, ndims(Vs),
                      typeof(layout), typeof(Vs)}(
-        location_axis, location_dim, migration_cost, ε_param, closure_deps,
+        location_axis, location_dim, migration_cost, ε_param,
         layout, layout, Vs, Λe,
     )
 end
 
-static_env_deps(::Type{<:Migration}) = NamedTuple()
+static_env_deps(::Type{<:MigrationStage}) = NamedTuple()
 
-function allocate(stage::Migration{Cmat,T,N},
-                  ::Type{T2} = T) where {Cmat,T,N,T2}
+function allocate(stage::MigrationStage, ::Type{T2} = eltype(stage.V_start)) where {T2}
     dims  = layout_size(stage.input_layout)
     n_loc = axissize(stage.input_layout.axes[stage.location_dim])
     prob  = zeros(T2, dims..., n_loc)
-    return ((choice_prob = prob,), nothing)
+    return (; kernel = (; choice_prob = prob), scratch = nothing)
 end
 
 # Backward #
@@ -104,26 +98,24 @@ end
 # with `i` and `j` running over the location-axis positions and `...`
 # over the non-location state.
 
-function backward!(stage::Migration{Cmat,T,N},
-                   V_end::AbstractArray{T,N},
-                   env, kernel, scratch) where {Cmat,T,N}
-    layout = stage.input_layout
-    ldim   = stage.location_dim
-    n_loc  = axissize(layout.axes[ldim])
-    C      = stage.migration_cost
-    ε      = resolve(stage.ε, env)
-    V_start = stage.V_start
-    prob    = kernel.choice_prob
-    dims    = layout_size(layout)
+function backward!(stage::MigrationStage, V_end, env, buffers)
+    (; kernel, scratch) = buffers
+    (; input_layout, location_dim, migration_cost, V_start) = stage
+    n_loc = axissize(input_layout.axes[location_dim])
+    ε     = resolve(stage.ε, env)
+    prob  = kernel.choice_prob
+    dims  = layout_size(input_layout)
+    T     = eltype(V_start)
+    C     = migration_cost
 
     for ci in CartesianIndices(dims)
         in_idxs = Tuple(ci)
-        i_loc   = in_idxs[ldim]
+        i_loc   = in_idxs[location_dim]
 
         # Pass 1: max for numerical stability.
         max_u = typemin(T)
         for j in 1:n_loc
-            out_idxs = Base.setindex(in_idxs, j, ldim)
+            out_idxs = Base.setindex(in_idxs, j, location_dim)
             u = -C[i_loc, j] + V_end[CartesianIndex(out_idxs)]
             u > max_u && (max_u = u)
         end
@@ -131,7 +123,7 @@ function backward!(stage::Migration{Cmat,T,N},
         # Pass 2: unnormalised weights.
         denom = zero(T)
         for j in 1:n_loc
-            out_idxs = Base.setindex(in_idxs, j, ldim)
+            out_idxs = Base.setindex(in_idxs, j, location_dim)
             u = -C[i_loc, j] + V_end[CartesianIndex(out_idxs)]
             w = exp((u - max_u) / ε)
             prob[in_idxs..., j] = w
@@ -151,16 +143,13 @@ end
 #---------#
 # Λ_post[j, s] = Σ_i P(j | i, s) · Λ_pre[i, s]
 
-function forward!(stage::Migration{Cmat,T,N},
-                  Λ_start::AbstractArray{T,N},
-                  kernel, scratch,
-                  moments = nothing) where {Cmat,T,N}
-    layout = stage.input_layout
-    ldim   = stage.location_dim
-    n_loc  = axissize(layout.axes[ldim])
-    Λ_end  = stage.Λ_end
-    prob   = kernel.choice_prob
-    dims   = layout_size(layout)
+function forward!(stage::MigrationStage, Λ_start, buffers, moments = nothing)
+    (; kernel, scratch) = buffers
+    (; input_layout, location_dim, Λ_end) = stage
+    n_loc = axissize(input_layout.axes[location_dim])
+    prob  = kernel.choice_prob
+    dims  = layout_size(input_layout)
+    T     = eltype(Λ_end)
 
     fill!(Λ_end, zero(T))
     for ci in CartesianIndices(dims)
@@ -170,7 +159,7 @@ function forward!(stage::Migration{Cmat,T,N},
         for j in 1:n_loc
             p = prob[in_idxs..., j]
             iszero(p) && continue
-            out_idxs = Base.setindex(in_idxs, j, ldim)
+            out_idxs = Base.setindex(in_idxs, j, location_dim)
             Λ_end[CartesianIndex(out_idxs)] += mass * p
         end
     end

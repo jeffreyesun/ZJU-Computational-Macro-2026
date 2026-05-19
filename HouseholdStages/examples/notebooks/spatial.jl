@@ -4,10 +4,10 @@
 #
 # Self-contained driver: depends only on `HouseholdStages`. Adds a
 # `:location` axis (categorical over `[:home, :abroad]`) to the
-# Aiyagari chain and a dedicated `Migration` stage between the income
+# Aiyagari chain and a dedicated `MigrationStage` between the income
 # shock and the L03/L04 savings decomposition:
 #
-#     IncomeShock ∘ₛ Migration ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavings
+#     IncomeShock ∘ₛ MigrationStage ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage
 #
 # Each location's capital market clears independently — no inter-
 # location trade. Outer loop: damped tatonnement on
@@ -44,48 +44,38 @@ using Printf
 end
 Base.Broadcast.broadcastable(p::SpatialParams) = Ref(p)
 
-function exp_wealth_grid(lo::Real, hi::Real, n::Int; shift::Real = 1.0)
-    return [exp(t) * shift - shift + lo
-            for t in range(0.0, log((hi - lo + shift) / shift); length = n)]
-end
-
-function spatial_layout(p::SpatialParams)
-    return StateLayout(
-        StateAxis(:wealth,   continuous_grid(exp_wealth_grid(p.w_min, p.w_max, p.N_w))),
-        StateAxis(:income,   discrete_finite(p.y_grid)),
-        StateAxis(:location, categorical([:home, :abroad])),
-    )
-end
-
 _u_crra(c, ::Val{1}) = log(c)
 _u_crra(c, ::Val{σ}) where σ = (c^(1 - σ)) / (1 - σ)
 u_crra(c, valσ::Val) = c < 0 ? -Inf : _u_crra(c, valσ)
 
 function spatial_household(p::SpatialParams)
-    layout = spatial_layout(p)
-    shock  = MarkovAlong(layout; axis = :income, transition = p.P_y)
+    layout = StateLayout(
+        StateAxis(:wealth,   continuous_grid(p.w_min, p.w_max;
+                                             length = p.N_w, spacing = :log)),
+        StateAxis(:income,   p.y_grid),
+        StateAxis(:location, categorical([:home, :abroad])),
+    )
 
-    C = [0.0             p.migration_cost;
-         p.migration_cost 0.0]
-    migration = Migration(layout;
+    shock = MarkovStage(layout; axis = :income, transition = p.P_y)
+
+    migration = MigrationStage(layout;
         location_axis  = :location,
-        migration_cost = C,
+        migration_cost = [0.0              p.migration_cost;
+                          p.migration_cost 0.0],
         ε              = p.ε_logit,
     )
 
-    receipt = WealthChange(layout;
-        wealth_post  = (cell; env) -> begin
-            e = env[]
+    receipt = WealthChangeStage(layout;
+        wealth_post = function (cell; env)
             (r, w) = cell.location == :home ?
-                     (e.r_home, e.w_home) :
-                     (e.r_abroad, e.w_abroad)
+                     (env.r_home, env.w_home) :
+                     (env.r_abroad, env.w_abroad)
             return (1 + r) * cell.wealth + w * cell.income
         end,
-        wealth_axis  = :wealth,
-        closure_deps = (:r_home, :w_home, :r_abroad, :w_abroad),
+        wealth_axis = :wealth,
     )
 
-    savings = ConsumptionSavings(layout;
+    savings = ConsumptionSavingsStage(layout;
         β               = p.β,
         utility         = (cell, c; env) -> u_crra(c, Val(p.σ)),
         wealth_axis     = :wealth,
@@ -114,24 +104,19 @@ function spatial_prices(K_home::Real, K_abroad::Real, p::SpatialParams)
     return (; r_home, w_home, r_abroad, w_abroad)
 end
 
-p      = SpatialParams()
-layout = spatial_layout(p)
-dims   = layout_size(layout)
-
+p    = SpatialParams()
 @printf "Calibration: β = %.3f, σ = %.2f, α = %.2f, δ = %.2f\n" p.β p.σ p.α p.δ
 @printf "Migration: ε_logit = %.2f, migration_cost = %.2f\n" p.ε_logit p.migration_cost
-@printf "Layout: wealth %d × income %d × location %d = %d cells\n" dims[1] dims[2] dims[3] prod(dims)
 
 
 # 2. Household Stage Chain and Workspace #
 #----------------------------------------#
 
-hh = spatial_household(p)
-caches, scratches = allocate(hh)
-V = zeros(Float64, dims...)
-Λ = fill(1.0 / prod(dims), dims...)
+hh      = spatial_household(p)
+buffers = allocate(hh)
+dims    = layout_size(first(hh.stages).input_layout)
 
-@printf "Λ_init: %d cells, ΣΛ = %.6f\n" length(Λ) sum(Λ)
+@printf "Layout: wealth %d × income %d × location %d = %d cells\n" dims[1] dims[2] dims[3] prod(dims)
 
 
 # 3. Inner Solve at a Trial (K_home, K_abroad) #
@@ -143,19 +128,17 @@ pr_trial = spatial_prices(K_home_trial, K_abroad_trial, p)
 env_trial = (; K_home = K_home_trial, K_abroad = K_abroad_trial,
                pr_trial.r_home, pr_trial.w_home,
                pr_trial.r_abroad, pr_trial.w_abroad)
-info_trial = solve_steady_state_given_env!(hh, env_trial, V, Λ, caches, scratches)
+(; V, Λ, vfi_iters, lambda_iters) =
+    solve_steady_state_given_env!(hh, env_trial, buffers)
 m_trial = compute_moments(hh, env_trial)
 
 @printf "(K_h, K_a)_trial = (%.4f, %.4f) → (Ks_h, Ks_a) = (%.4f, %.4f)\n" K_home_trial K_abroad_trial m_trial.K_home m_trial.K_abroad
 @printf "  residuals = (%+.4f, %+.4f); pop_home = %.4f, pop_abroad = %.4f\n" (m_trial.K_home - K_home_trial) (m_trial.K_abroad - K_abroad_trial) m_trial.pop_home m_trial.pop_abroad
-@printf "  VFI: %d iters; Λ: %d iters; r_h / r_a = %.4f / %.4f\n" info_trial.vfi_iters info_trial.lambda_iters env_trial.r_home env_trial.r_abroad
+@printf "  VFI: %d iters; Λ: %d iters; r_h / r_a = %.4f / %.4f\n" vfi_iters lambda_iters env_trial.r_home env_trial.r_abroad
 
 
 # 4. Outer Damped Tatonnement #
 #-----------------------------#
-
-# Damped tatonnement on `(K_home, K_abroad)`. State is a pair; the
-# update is absolute damped (matches the spatial example folder).
 
 damping = 0.1
 tol     = 0.25
@@ -173,8 +156,8 @@ println("Solving spatial two-location steady state…")
     while iters < maxiter
         pr  = spatial_prices(K_home, K_abroad, p)
         env = (; K_home, K_abroad, pr.r_home, pr.w_home, pr.r_abroad, pr.w_abroad)
-        info = solve_steady_state_given_env!(hh, env, V, Λ, caches, scratches)
-        global V, Λ = info.V, info.Λ
+        res = solve_steady_state_given_env!(hh, env, buffers; V_init = V, Λ_init = Λ)
+        global V, Λ = res.V, res.Λ
         global moments_last = compute_moments(hh, env)
 
         res_h = moments_last.K_home   - K_home

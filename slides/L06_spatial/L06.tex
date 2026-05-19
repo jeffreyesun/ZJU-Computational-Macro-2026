@@ -1,0 +1,1163 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+\usepackage{fontspec}
+\usepackage{xeCJK}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+\setCJKmainfont{Noto Sans CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+% Composition operator: ∘ with subscript s. Same convention as L05.
+\newcommand{\circs}{\mathbin{\circ_s}}
+
+\title{Lecture 6: Spatial Heterogeneity and Calibration \\
+       {\large 第六讲：空间异质性与校准}}
+\subtitle{Computational Methods for Heterogeneous-Agent Macro}
+\author{Jeffrey Sun}
+\institute{University of Toronto}
+\date{May 18, 2026}
+
+\begin{document}
+
+\maketitle
+
+
+% =============================================================
+\section[Course Overview]{Course Overview / 课程概览}
+% =============================================================
+
+\begin{frame}{Where we are \\ 我们走到哪里了}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item L1--L4: build the household block; solve Aiyagari SS.
+  \item L5: meet \texttt{HouseholdStages.jl}; transition dynamics.
+  \item \textbf{Today (L6):} a new dimension (space) and a new use of the model (matching it to data).
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item L1--L4：搭家庭块；求 Aiyagari 稳态。
+  \item L5：见 \texttt{HouseholdStages.jl}、过渡动态。
+  \item \textbf{今天（L6）：}一个新维度（空间）、一个新用法（与数据匹配）。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Today's roadmap \\ 今日路线图}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item A spatial Aiyagari model.
+  \item \texttt{MigrationStage}: Gumbel discrete choice.
+  \item Solving the steady state.
+  \item Calibration: matching population shares.
+  \item Extensions: goods, trade, factor mobility.
+  \item Wrap.
+\end{enumerate}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item 空间 Aiyagari 模型。
+  \item \texttt{MigrationStage}：Gumbel 离散选择。
+  \item 解稳态。
+  \item 校准：匹配人口份额。
+  \item 拓展：商品、贸易、要素流动性。
+  \item 收尾。
+\end{enumerate}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Two new ideas today \\ 今天的两个新想法}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Idea 1.} Add a new \emph{discrete} dimension to the household state: \textbf{location}. A new stage --- \texttt{MigrationStage} --- runs the within-period location choice.
+
+\vspace{0.5em}
+
+\textbf{Idea 2.} Use the household block as a \emph{calibration object}: pick model parameters so the implied population shares match the data.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{想法一。}给家庭状态加一个\emph{离散}维度：\textbf{地点}。新 Stage \texttt{MigrationStage} 负责期内地点选择。
+
+\vspace{0.5em}
+
+\textbf{想法二。}把家庭块当作\emph{校准对象}：选择模型参数，让模型隐含的人口份额匹配数据。
+\end{column}
+\end{columns}
+\end{frame}
+
+
+% =============================================================
+\section[A Spatial Aiyagari]{A Spatial Aiyagari / 空间 Aiyagari}
+% =============================================================
+
+\begin{frame}{Setting: three locations \\ 设定：三个地点}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Three locations \texttt{loc1}, \texttt{loc2}, \texttt{loc3}.
+  \item Each produces \textbf{the same single good}: a costlessly-tradable, perfectly-substitutable numeraire.
+  \item Each has its own \textbf{productivity} $A_j$: $A_1 > A_2 > A_3$.
+  \item Local production: $Y_j = A_j K_j^{\alpha} L_j^{1-\alpha}$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 三个地点 \texttt{loc1}、\texttt{loc2}、\texttt{loc3}。
+  \item 每地生产\textbf{同一种商品}：无成本可贸易、完全可替代的计价品。
+  \item 每地有自己的\textbf{生产率} $A_j$：$A_1 > A_2 > A_3$。
+  \item 本地生产：$Y_j = A_j K_j^{\alpha} L_j^{1-\alpha}$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Households \\ 家庭}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item Each household has one unit of inelastic labor.
+  \item \textbf{State} this period: $(b, j)$ --- wealth + current location.
+  \item \textbf{No} idiosyncratic income shocks. Within $j$, every household earns $w_j$.
+  \item All heterogeneity is over $(b, j)$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 每户家庭非弹性供给一单位劳动。
+  \item 当期\textbf{状态}：$(b, j)$ —— 财富 + 当前地点。
+  \item \textbf{没有}个体收入冲击；在地点 $j$ 内每户工资都是 $w_j$。
+  \item 异质性全在 $(b, j)$ 上。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{One bond market \\ 一个统一债券市场}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{One asset}, traded freely across the three locations and with the rest of the world.
+  \item Capital flows freely $\Rightarrow$ \textbf{MPK equalized}: $r + \delta = \alpha A_j (L_j / K_j)^{1 - \alpha}$.
+  \item Wages adjust: $w_j = (1 - \alpha) A_j \left( \frac{\alpha A_j}{r + \delta} \right)^{\alpha / (1 - \alpha)}$.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{单一资产}，在三地之间以及与世界自由交易。
+  \item 资本自由流动 $\Rightarrow$ \textbf{MPK 相等}：$r + \delta = \alpha A_j (L_j / K_j)^{1 - \alpha}$。
+  \item 工资随之调整：$w_j = (1 - \alpha) A_j \left( \frac{\alpha A_j}{r + \delta} \right)^{\alpha / (1 - \alpha)}$。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Where does $r$ come from? \\ $r$ 从哪儿来？}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Small open economy.} The country is \emph{small} in the world bond market $\Rightarrow$ $r$ is taken as given (exogenous, $r = 0.03$).
+
+\vspace{0.5em}
+
+\textbf{Why exogenous today?} Without idiosyncratic income shocks, household saving is weak; endogenous $r$ would sit at the saving boundary $1/\beta - 1$. Exogenous $r$ lets us focus on \textbf{migration + calibration} without bond-market fragility.
+
+\vspace{0.5em}
+
+\textbf{Trade-off:} the asset market is degenerate; everything else gets a clean treatment.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{小型开放经济。}本国在世界债券市场上\emph{规模小} $\Rightarrow$ $r$ 视为外生给定（$r = 0.03$）。
+
+\vspace{0.5em}
+
+\textbf{为什么今天外生？}没有个体收入冲击，家庭储蓄不强；内生 $r$ 会顶在储蓄边界 $1/\beta - 1$。外生 $r$ 让我们专心于\textbf{迁移 + 校准}，不被债券市场的数值不稳干扰。
+
+\vspace{0.5em}
+
+\textbf{取舍：}资产市场退化，但其余部分干净。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Within-period chain \\ 期内链}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item \textbf{Migration.} Draw a Gumbel taste shock over destinations. Pick $j'$, pay cost $C[j, j']$.
+  \item \textbf{Wealth update.} At destination $j'$: $b' \gets (1 + r) b + w_{j'}$.
+  \item \textbf{Consumption / savings.} Choose next-period wealth.
+\end{enumerate}
+
+\vspace{0.5em}
+
+The chain (compact form):
+\[
+\text{Migr.} \circs \text{WealthCh.} \circs \text{ConsSav.}
+\]
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item \textbf{迁移。}在目的地之间抽 Gumbel 偏好冲击；选目的地 $j'$，付成本 $C[j, j']$。
+  \item \textbf{财富更新。}在目的地 $j'$：$b' \gets (1 + r) b + w_{j'}$。
+  \item \textbf{消费 / 储蓄。}选下期财富。
+\end{enumerate}
+
+\vspace{0.5em}
+
+链（紧凑写法）：
+\[
+\text{Migr.} \circs \text{WealthCh.} \circs \text{ConsSav.}
+\]
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{What we want to know \\ 要求的对象}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Steady-state objects:}
+\begin{itemize}
+  \item Population shares $s_j$ across locations.
+  \item Wealth distribution $\Lambda(b, j)$ (joint).
+  \item Aggregate $K_{\text{total}} = \sum_b b\, \Lambda(b, \cdot)$.
+  \item Value function $V(b, j)$.
+\end{itemize}
+
+\vspace{0.3em}
+
+Prices $(r, w_1, w_2, w_3)$ are pinned down before the household solve.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{稳态变量：}
+\begin{itemize}
+  \item 各地人口份额 $s_j$。
+  \item 财富分布 $\Lambda(b, j)$（联合）。
+  \item 总财富 $K_{\text{total}} = \sum_b b\, \Lambda(b, \cdot)$。
+  \item 价值函数 $V(b, j)$。
+\end{itemize}
+
+\vspace{0.3em}
+
+价格 $(r, w_1, w_2, w_3)$ 在求解家庭前就已经定下。
+\end{column}
+\end{columns}
+\end{frame}
+
+
+% =============================================================
+\section[MigrationStage]{MigrationStage / 迁移 Stage}
+% =============================================================
+
+\begin{frame}{The Gumbel choice problem \\ Gumbel 选择问题}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+At origin $i$, a household sees the value of being at each destination $j$:
+\[
+\tilde V_j = -C[i, j] + V_{\text{end}}(j, b),
+\]
+plus an idiosyncratic \textbf{Gumbel taste shock} $\varepsilon_j \sim \text{EV1}$ (i.i.d.\ over $j$).
+
+\vspace{0.4em}
+
+The household picks $j^\star = \arg\max_j \big( \tilde V_j + \varepsilon \cdot \varepsilon_j \big)$, where $\varepsilon$ is the shock \textbf{scale}.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+在原地 $i$，家庭看到去每个目的地 $j$ 的价值：
+\[
+\tilde V_j = -C[i, j] + V_{\text{end}}(j, b),
+\]
+再加上个体 \textbf{Gumbel 偏好冲击} $\varepsilon_j \sim \text{EV1}$（关于 $j$ 独立同分布）。
+
+\vspace{0.4em}
+
+家庭选 $j^\star = \arg\max_j \big( \tilde V_j + \varepsilon \cdot \varepsilon_j \big)$，其中 $\varepsilon$ 是冲击的\textbf{尺度}。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The log-sum-exp formula \\ 对数-求和-指数公式}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+With $\varepsilon_j \sim \text{EV1}$, two classical facts:
+
+\vspace{0.4em}
+
+\textbf{(a) Choice probabilities are logit:}
+\[
+\Pr(j \mid i, b) = \frac{\exp(\tilde V_j / \varepsilon)}{\sum_k \exp(\tilde V_k / \varepsilon)}.
+\]
+
+\textbf{(b) Expected value is the inclusive value:}
+\[
+\E\Big[\max_j (\tilde V_j + \varepsilon \cdot \varepsilon_j)\Big] = \varepsilon \log \sum_k \exp\!\big(\tilde V_k / \varepsilon \big).
+\]
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+若 $\varepsilon_j \sim \text{EV1}$，有两条经典结论：
+
+\vspace{0.4em}
+
+\textbf{(a) 选择概率是 logit：}
+\[
+\Pr(j \mid i, b) = \frac{\exp(\tilde V_j / \varepsilon)}{\sum_k \exp(\tilde V_k / \varepsilon)}.
+\]
+
+\textbf{(b) 期望值是 inclusive value：}
+\[
+\E\Big[\max_j (\tilde V_j + \varepsilon \cdot \varepsilon_j)\Big] = \varepsilon \log \sum_k \exp\!\big(\tilde V_k / \varepsilon \big).
+\]
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Why log-sum-exp matters \\ 为什么 log-sum-exp 重要}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $\max$ is non-smooth, non-differentiable at ties.
+  \item $\varepsilon \log \sum \exp(\cdot / \varepsilon)$ is \textbf{smooth} in its arguments.
+  \item As $\varepsilon \to 0$: recovers $\max$ (the argmax wins).
+  \item As $\varepsilon \to \infty$: all choices equally likely (random allocation).
+  \item $\varepsilon$ is a \textbf{smoothing} / preference-noise parameter.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $\max$ 不光滑、并列时不可微。
+  \item $\varepsilon \log \sum \exp(\cdot / \varepsilon)$ 在其参数上\textbf{光滑}。
+  \item $\varepsilon \to 0$：退化为 $\max$（argmax 取胜）。
+  \item $\varepsilon \to \infty$：所有选择等概率（随机分配）。
+  \item $\varepsilon$ 是\textbf{平滑} / 偏好噪声参数。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The \texttt{MigrationStage} kernel \\ \texttt{MigrationStage} 核}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Backward pass (computes $V_{\text{pre}}$):}
+\[
+V_{\text{pre}}(b, i) = \varepsilon \log \sum_j \exp\!\frac{- C[i,j] + V_{\text{end}}(b, j)}{\varepsilon}.
+\]
+
+\textbf{Forward pass (pushes $\Lambda$):}
+\[
+\Lambda_{\text{post}}(b, j) = \sum_i \Pr(j \mid i, b)\, \Lambda_{\text{pre}}(b, i).
+\]
+
+\vspace{0.4em}
+
+Same kernel as the static logit, threaded through the chain by V/$\Lambda$ duality.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{反向（算 $V_{\text{pre}}$）：}
+\[
+V_{\text{pre}}(b, i) = \varepsilon \log \sum_j \exp\!\frac{- C[i,j] + V_{\text{end}}(b, j)}{\varepsilon}.
+\]
+
+\textbf{前向（推 $\Lambda$）：}
+\[
+\Lambda_{\text{post}}(b, j) = \sum_i \Pr(j \mid i, b)\, \Lambda_{\text{pre}}(b, i).
+\]
+
+\vspace{0.4em}
+
+核心和静态 logit 一致，通过 V/$\Lambda$ 对偶嵌入链中。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{The API \\ API}
+\begin{lstlisting}
+migration = MigrationStage(layout;
+    location_axis  = :location,
+    migration_cost = C,      # (n_loc, n_loc) origin → destination
+    ε              = 1.5,    # Gumbel scale
+)
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item No user closure needed for the cost --- pass the matrix.
+  \item $\varepsilon$ accepts a literal or a \texttt{Param} (for sweeps / AD).
+  \item Stage allocates the $(\text{cells}, n_{\text{loc}})$ probability tensor itself.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 成本不需要闭包 —— 直接传矩阵。
+  \item $\varepsilon$ 可为字面量或 \texttt{Param}（扫参/自动微分时用）。
+  \item Stage 自己开 $(\text{cells}, n_{\text{loc}})$ 概率张量。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Preference shifters $\alpha_j$ \\ 偏好平移 $\alpha_j$}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+We want a per-destination utility add-on $\alpha_j$:
+\[
+\tilde V_j = -C[i, j] + \alpha_j + V_{\text{end}}(j, b).
+\]
+
+\vspace{0.3em}
+
+\textbf{Trick:} $\alpha_j$ is the same as a column subtraction from the cost matrix:
+\[
+C_{\text{eff}}[i, j] = C_{\text{base}}[i, j] - \alpha_j.
+\]
+
+\vspace{0.3em}
+
+No API change needed --- just rebuild (or mutate) the cost.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+我们想给每个目的地加一个效用增量 $\alpha_j$：
+\[
+\tilde V_j = -C[i, j] + \alpha_j + V_{\text{end}}(j, b).
+\]
+
+\vspace{0.3em}
+
+\textbf{技巧：}给目的地加 $\alpha_j$ 与把成本矩阵的对应列减去 $\alpha_j$ 等价：
+\[
+C_{\text{eff}}[i, j] = C_{\text{base}}[i, j] - \alpha_j.
+\]
+
+\vspace{0.3em}
+
+无需修改 API —— 重建（或就地修改）成本即可。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{The household block in code \\ 家庭块代码}
+\begin{lstlisting}
+layout = StateLayout(
+    StateAxis(:wealth,   continuous_grid(0, 25; length=250)),
+    StateAxis(:location, categorical([:loc1, :loc2, :loc3])))
+migration = MigrationStage(layout; location_axis = :location,
+    migration_cost = effective_cost(p), ε = p.ε_logit)
+receipt = WealthChangeStage(layout; wealth_axis = :wealth,
+    wealth_post = (cell; env) -> (1 + env.r) * cell.wealth +
+        (cell.location == :loc1 ? env.w1 :
+         cell.location == :loc2 ? env.w2 : env.w3))
+savings = ConsumptionSavingsStage(layout; β=p.β, wealth_axis=:wealth,
+    utility = (cell, c; env) -> u_crra(c, Val(p.σ)))
+
+hh = lift_moments(migration ∘ₛ receipt ∘ₛ savings; K_total=..., L1=..., ...)
+\end{lstlisting}
+\end{frame}
+
+
+% =============================================================
+\section[Steady State]{Steady State / 稳态}
+% =============================================================
+
+\begin{frame}{No outer loop today \\ 今天没有外层循环}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item L4: outer loop on $\bar K$ (Aiyagari).
+  \item L5: outer loop on $\{K_t\}$ (transitions).
+  \item \textbf{L6: no outer loop.} $r$ is exogenous; $w_j(r, A_j)$ closed-form.
+  \item One inner solve $\to$ done.
+\end{itemize}
+
+\vspace{0.4em}
+
+What's left: \texttt{solve\_steady\_state\_given\_env!(hh, env, buffers)}.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item L4：外层迭代 $\bar K$（Aiyagari）。
+  \item L5：外层迭代路径 $\{K_t\}$（过渡）。
+  \item \textbf{L6：没有外层循环。}$r$ 外生；$w_j(r, A_j)$ 有闭式。
+  \item 一次内层求解 $\to$ 完事。
+\end{itemize}
+
+\vspace{0.4em}
+
+留下来的是 \texttt{solve\_steady\_state\_given\_env!(hh, env, buffers)}。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Inner solve \\ 内层求解}
+\begin{lstlisting}
+function solve_household(hh, buffers, p; V_init = nothing, Λ_init = nothing)
+    env = (; r  = p.r,
+              w1 = spatial_wage(p.r, p.A[1], p),
+              w2 = spatial_wage(p.r, p.A[2], p),
+              w3 = spatial_wage(p.r, p.A[3], p))
+    res = solve_steady_state_given_env!(hh, env, buffers;
+                                         V_init = V_init, Λ_init = Λ_init)
+    m   = compute_moments(hh, env)
+    shares = [m.L1, m.L2, m.L3] ./ (m.L1 + m.L2 + m.L3)
+    return (; res..., env, moments = m, shares)
+end
+\end{lstlisting}
+
+\textbf{V} backward to fixed point at \texttt{env}, then \textbf{$\Lambda$} forward to stationarity. Then read moments.
+
+\textbf{V} 在 \texttt{env} 下反向收敛，\textbf{$\Lambda$} 前向收敛到平稳。然后读取矩。
+\end{frame}
+
+\begin{frame}{Uncalibrated baseline ($\alpha = 0$) \\ 未校准基准（$\alpha = 0$）}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+With $r = 0.03$ and $A = (1.20, 1.00, 0.85)$:
+\begin{itemize}
+  \item Wages: $(w_1, w_2, w_3) = (1.66, 1.25, 0.97)$.
+  \item Shares: $(0.39, 0.37, 0.25)$.
+  \item $K_{\text{total}} = 0.75$.
+\end{itemize}
+
+\vspace{0.4em}
+
+\texttt{loc1}'s high productivity makes it the most attractive destination; \texttt{loc3}'s low wage drives population out.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+取 $r = 0.03$，$A = (1.20, 1.00, 0.85)$：
+\begin{itemize}
+  \item 工资：$(w_1, w_2, w_3) = (1.66, 1.25, 0.97)$。
+  \item 份额：$(0.39, 0.37, 0.25)$。
+  \item $K_{\text{total}} = 0.75$。
+\end{itemize}
+
+\vspace{0.4em}
+
+\texttt{loc1} 高生产率最具吸引力；\texttt{loc3} 工资低则人口流出。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Reading $V$ across locations \\ 解读跨地点的 $V$}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+At fixed wealth $b$:
+\[
+V(b, j) \gtrless V(b, j')
+\]
+purely from wage differences and the cost structure $C[i, j]$.
+
+\vspace{0.4em}
+
+\textbf{Migration choice} comes from comparing $V_{\text{end}}(j, b')$ at the wealth $b'$ implied by moving to $j$.
+
+\vspace{0.4em}
+
+(Implementation: the \texttt{MigrationStage} kernel populates \texttt{choice\_prob}, a $(N_w, 3, 3)$ tensor.)
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+财富 $b$ 给定时：
+\[
+V(b, j) \gtrless V(b, j')
+\]
+完全由工资差和成本结构 $C[i, j]$ 决定。
+
+\vspace{0.4em}
+
+\textbf{迁移选择}比较的是搬到 $j$ 后到达财富 $b'$ 时的 $V_{\text{end}}(j, b')$。
+
+\vspace{0.4em}
+
+（实现：\texttt{MigrationStage} 核填充 \texttt{choice\_prob}，一个 $(N_w, 3, 3)$ 张量。）
+\end{column}
+\end{columns}
+\end{frame}
+
+
+% =============================================================
+\section[Calibration]{Calibration / 校准}
+% =============================================================
+
+\begin{frame}{Calibration: model meets data \\ 校准：模型与数据相遇}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Familiar example (L4):} pick $\beta$ so that the model's $K/Y$ matches the data $K/Y$. One parameter, one moment.
+
+\vspace{0.4em}
+
+\textbf{Today:} pick \textbf{preference shifters} $\alpha = (\alpha_1, \alpha_2, \alpha_3)$ so that the model's \textbf{population shares} match the data shares.
+
+\vspace{0.4em}
+
+Three parameters, three moments. (Normalization $\alpha_1 = 0$ leaves two free; shares sum to 1 leaves two binding.)
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{熟悉的例子（L4）：}选 $\beta$ 让模型的 $K/Y$ 与数据匹配。一个参数、一个矩。
+
+\vspace{0.4em}
+
+\textbf{今天：}选\textbf{偏好平移} $\alpha = (\alpha_1, \alpha_2, \alpha_3)$ 让模型的\textbf{人口份额}匹配数据。
+
+\vspace{0.4em}
+
+三个参数、三个矩。（标准化 $\alpha_1 = 0$ 剩两个自由；份额和为 1 剩两个有效约束。）
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The data we want to match \\ 要匹配的数据}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Synthetic target:}
+\[
+s^{\text{data}} = (0.30,\ 0.30,\ 0.40).
+\]
+
+\vspace{0.4em}
+
+The data say \texttt{loc3} houses \emph{40\%} of households --- even though its productivity (and wage) is \emph{lowest}.
+
+\vspace{0.4em}
+
+\textbf{Something keeps people in \texttt{loc3}} that the $\alpha = 0$ model does not see: an "amenity," a non-pecuniary preference for \texttt{loc3}. The shifter $\alpha_3$ will quantify it.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{合成目标：}
+\[
+s^{\text{data}} = (0.30,\ 0.30,\ 0.40).
+\]
+
+\vspace{0.4em}
+
+数据显示 \texttt{loc3} 住了 \emph{40\%} 的家庭 —— 尽管它的生产率（和工资）\emph{最低}。
+
+\vspace{0.4em}
+
+\textbf{有什么因素把人留在 \texttt{loc3}}，是 $\alpha = 0$ 模型看不到的：一种"便利度"或对 \texttt{loc3} 的非货币偏好。$\alpha_3$ 将给它一个量值。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The static intuition \\ 静态直觉}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+In a \textbf{static} multinomial logit with deterministic-part utilities $\delta_j$:
+\[
+s_j = \frac{\exp(\delta_j / \varepsilon)}{\sum_k \exp(\delta_k / \varepsilon)}.
+\]
+
+\textbf{Take log differences:}
+\[
+\log s_j - \log s_{j'} = \frac{\delta_j - \delta_{j'}}{\varepsilon}.
+\]
+
+If $\delta_j$ contains $\alpha_j$ additively, we recover $\alpha_j - \alpha_{j'}$ directly from observed log-share differences.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{静态}多项 logit 中，效用确定部分为 $\delta_j$：
+\[
+s_j = \frac{\exp(\delta_j / \varepsilon)}{\sum_k \exp(\delta_k / \varepsilon)}.
+\]
+
+\textbf{取 log 差：}
+\[
+\log s_j - \log s_{j'} = \frac{\delta_j - \delta_{j'}}{\varepsilon}.
+\]
+
+如果 $\delta_j$ 加性包含 $\alpha_j$，那么直接由 log-份额差就能恢复 $\alpha_j - \alpha_{j'}$。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Berry's contraction (1994) \\ Berry 收缩（1994）}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+In our dynamic model, $\delta_j$ depends on $\alpha$ through $V$. The static formula is no longer an exact inversion.
+
+\vspace{0.4em}
+
+\textbf{Berry's idea:} use it as a \emph{contraction step}:
+\[
+\alpha_j^{(k+1)} = \alpha_j^{(k)} + \varepsilon \cdot \bigl( \log s_j^{\text{data}} - \log s_j^{\text{model}, (k)} \bigr).
+\]
+
+In the static case Berry proves this is a contraction. In our dynamic case it's still a useful fixed-point iteration if log-shares are monotone in $\alpha$.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+动态模型中，$\delta_j$ 通过 $V$ 依赖于 $\alpha$。静态公式不再是精确的反演。
+
+\vspace{0.4em}
+
+\textbf{Berry 的想法：}把它当作\emph{收缩步}：
+\[
+\alpha_j^{(k+1)} = \alpha_j^{(k)} + \varepsilon \cdot \bigl( \log s_j^{\text{data}} - \log s_j^{\text{model}, (k)} \bigr).
+\]
+
+静态情形 Berry 证明这是一个收缩。动态情形下，只要 log-份额与 $\alpha$ 单调，仍是有效的不动点迭代。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Why this is "indirect" \\ 为什么叫"间接"}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Direct inference:} read off the parameter from the data. We can't --- we don't observe $\alpha_j$ in any data set.
+
+\vspace{0.4em}
+
+\textbf{Indirect inference (broad sense):} use the \emph{model} as a translator: observe shares (which we have) and back out $\alpha$ (which we don't) by matching.
+
+\vspace{0.4em}
+
+\textbf{Note.} Strict Gourieroux--Monfort--Renault (1993) uses an auxiliary model. Macro talk uses the term more loosely; we follow the loose usage.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{直接推断：}从数据直接读出参数。这里做不到。
+
+\vspace{0.4em}
+
+\textbf{间接推断（宽义）：}把\emph{模型}当翻译器：观察份额，匹配反推 $\alpha$。
+
+\vspace{0.4em}
+
+\textbf{说明。}严格 Gourieroux--Monfort--Renault（1993）用辅助模型；宏观常用宽义，本讲采用宽义。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The calibration loop \\ 校准循环}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item Initialize $\alpha^{(0)} = 0$.
+  \item \textbf{Solve the household} at $\alpha^{(k)}$. Get $s^{\text{model}, (k)}$.
+  \item Compute gap $g_j = \log s_j^{\text{data}} - \log s_j^{\text{model}, (k)}$.
+  \item If $\| g \|_\infty < \text{tol}$, \textbf{stop}.
+  \item Update $\alpha^{(k+1)} = \alpha^{(k)} + \varepsilon \cdot g$, normalize $\alpha_1 = 0$.
+  \item Repeat.
+\end{enumerate}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{enumerate}
+  \item 初始化 $\alpha^{(0)} = 0$。
+  \item 在 $\alpha^{(k)}$ 上\textbf{求解家庭块}。得到 $s^{\text{model}, (k)}$。
+  \item 算差 $g_j = \log s_j^{\text{data}} - \log s_j^{\text{model}, (k)}$。
+  \item 若 $\| g \|_\infty < \text{tol}$，\textbf{停止}。
+  \item 更新 $\alpha^{(k+1)} = \alpha^{(k)} + \varepsilon \cdot g$，归一化 $\alpha_1 = 0$。
+  \item 重复。
+\end{enumerate}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{In code \\ 代码}
+\begin{lstlisting}
+function calibrate_shifters!(hh, buffers, p, s_data; tol=5e-3, maxiter=30)
+    α = copy(p.α_pref); V, Λ = nothing, nothing
+    for k in 1:maxiter
+        set_shifters!(hh, p, α)
+        out  = solve_household(hh, buffers, p; V_init=V, Λ_init=Λ)
+        V, Λ = out.V, out.Λ
+        gap  = log.(s_data) .- log.(max.(out.shares, 1e-8))
+        maximum(abs.(gap)) < tol && return α
+        α .+= p.ε_logit .* gap;   α .-= α[1]   # Berry step + normalize
+    end
+end
+\end{lstlisting}
+
+\textbf{Note.} \texttt{hh.stages[1].migration\_cost} is mutated in place each iteration --- no rebuilding. \quad \textbf{注：}每轮原地修改成本矩阵，不重建链。
+\end{frame}
+
+\begin{frame}{Running it \\ 运行}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Iteration log} (selected):
+\begin{itemize}
+  \item Iter 1: shares (0.387, 0.365, 0.248); $\alpha = 0$.
+  \item Iter 2: shares (0.247, 0.279, 0.474); $\alpha = (0, 0.09, 1.10)$.
+  \item Iter 4: shares (0.285, 0.297, 0.418); $\alpha = (0, 0.03, 0.83)$.
+  \item Iter 8: shares (0.299, 0.300, 0.401); $\alpha = (0, -0.013, 0.747)$. \textbf{Done.}
+\end{itemize}
+
+\vspace{0.4em}
+
+Converges in 8 iterations. Geometric convergence in the log-share gap.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{迭代记录}（节选）：
+\begin{itemize}
+  \item 第 1 轮：份额 (0.387, 0.365, 0.248)；$\alpha = 0$。
+  \item 第 2 轮：份额 (0.247, 0.279, 0.474)；$\alpha = (0, 0.09, 1.10)$。
+  \item 第 4 轮：份额 (0.285, 0.297, 0.418)；$\alpha = (0, 0.03, 0.83)$。
+  \item 第 8 轮：份额 (0.299, 0.300, 0.401)；$\alpha = (0, -0.013, 0.747)$。\textbf{完成}。
+\end{itemize}
+
+\vspace{0.4em}
+
+8 轮收敛。log-份额差几何级下降。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Reading the calibrated $\alpha$ \\ 解读校准的 $\alpha$}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $\alpha_1 = 0$ (normalized).
+  \item $\alpha_2 \approx -0.013$: \texttt{loc2}'s 30\% share is consistent with the wage-only model.
+  \item $\alpha_3 \approx 0.747$: \texttt{loc3} has $\approx 0.75$ utility per period of unobserved amenity.
+\end{itemize}
+
+\vspace{0.3em}
+
+$\alpha_3 \approx 0.75$ is the kind of inference indirect identification gives us: a value for a quantity we cannot directly see.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item $\alpha_1 = 0$（标准化）。
+  \item $\alpha_2 \approx -0.013$：\texttt{loc2} 的 30\% 与工资模型一致。
+  \item $\alpha_3 \approx 0.747$：\texttt{loc3} 每期约 $0.75$ 个单位的未观测便利度。
+\end{itemize}
+
+\vspace{0.3em}
+
+$\alpha_3 \approx 0.75$ —— 间接识别给出一个无法直接观察的量的数值。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{What if data shares were different? \\ 数据份额不同会怎样？}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\textbf{Comparative static of identification.}
+
+\vspace{0.3em}
+
+\begin{itemize}
+  \item If $s_3^{\text{data}}$ rose from 0.40 to 0.45, $\alpha_3$ would rise to keep the model honest.
+  \item If $s_3^{\text{data}}$ fell to 0.20 (less than the wage-only prediction), $\alpha_3$ would go \emph{negative} --- a \emph{dis}amenity that the wage model fails to capture.
+\end{itemize}
+
+\vspace{0.3em}
+
+The inferred $\alpha$ \textbf{tracks the data}, not the model's preferences. That's what makes it a useful empirical object.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\textbf{识别的比较静态。}
+
+\vspace{0.3em}
+
+\begin{itemize}
+  \item 若 $s_3^{\text{data}}$ 由 0.40 升到 0.45，$\alpha_3$ 也升以保持模型与数据一致。
+  \item 若 $s_3^{\text{data}}$ 降到 0.20（低于工资单独的预测），$\alpha_3$ 变成\emph{负的} —— 工资模型看不到的\emph{负}便利度。
+\end{itemize}
+
+\vspace{0.3em}
+
+推断出的 $\alpha$ \textbf{跟随数据}走，而不是模型偏好。这正是它有用之处。
+\end{column}
+\end{columns}
+\end{frame}
+
+
+% =============================================================
+\section[Extensions]{Extensions / 拓展}
+% =============================================================
+
+\begin{frame}{What our model assumed \\ 模型的假设}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+We assumed:
+\begin{enumerate}
+  \item \textbf{One good}, perfectly substitutable across locations.
+  \item \textbf{Costless trade} in that good.
+  \item \textbf{Free capital} flow (one $r$).
+  \item \textbf{Free labor} flow (subject to migration cost).
+\end{enumerate}
+
+\vspace{0.4em}
+
+These are strong. Spatial economics tracks what changes when each is relaxed.
+
+\textbf{No code today --- just the headline.}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+本讲假设：
+\begin{enumerate}
+  \item \textbf{一种商品}，地点间完全可替代。
+  \item 该商品\textbf{无成本贸易}。
+  \item 资本\textbf{自由流动}（单一 $r$）。
+  \item 劳动\textbf{自由流动}（受迁移成本约束）。
+\end{enumerate}
+
+\vspace{0.4em}
+
+每条都很强。空间经济学研究的是放松每条会变什么。
+
+\textbf{今天不写代码 —— 只讲方向。}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Variation 1: differentiated goods (Armington) \\ 变体 1：差异化商品（Armington）}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Each location's good is a \emph{distinct variety}; consumers love variety (CES aggregator).
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item Trade flows from variety demand.
+  \item Local prices $p_j$ differ; real wages depend on the local price index.
+  \item Migration responds to \emph{real} wages.
+\end{itemize}
+
+\vspace{0.3em}
+
+This is the \textbf{Armington (1969)} structure underlying modern trade / spatial economics (Eaton--Kortum, Allen--Arkolakis).
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+每地商品是\emph{独立变种}；消费者偏好多样性（CES 聚合）。
+
+\vspace{0.3em}
+
+\begin{itemize}
+  \item 变种需求产生贸易流。
+  \item 各地价格 $p_j$ 不同；实际工资取决于本地价格指数。
+  \item 迁移响应\emph{实际}工资。
+\end{itemize}
+
+\vspace{0.3em}
+
+这是现代贸易 / 空间经济学的标准 \textbf{Armington (1969)} 结构（Eaton--Kortum, Allen--Arkolakis）。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Variation 2: trade costs \\ 变体 2：贸易成本}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Goods don't cross borders for free: \textbf{iceberg cost} $\tau_{ij} \geq 1$ (you must ship $\tau_{ij}$ units for 1 to arrive).
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item Local prices depend on distance.
+  \item Some goods become non-tradable ($\tau \to \infty$): services, housing.
+  \item Households consume a mix of tradables and non-tradables.
+  \item Migration costs and trade costs interact (closer regions tend to share both).
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+商品过境并非无代价：\textbf{冰山成本} $\tau_{ij} \geq 1$（运出 $\tau_{ij}$ 单位才到 1 单位）。
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item 各地价格随距离变化。
+  \item 部分商品变为不可贸易（$\tau \to \infty$）：服务、住房。
+  \item 家庭消费可贸易品 + 不可贸易品的混合。
+  \item 迁移成本与贸易成本相互影响（邻近地区往往两者都低）。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Variation 3: restricted factor mobility \\ 变体 3：要素流动受限}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{Capital is local} (e.g.\ housing). Local capital scarcity raises local rental rates and house prices.
+  \item \textbf{Migration cost is sunk and large.} Workers don't equalize wages quickly; spatial wage differentials persist.
+  \item \textbf{Skill heterogeneity.} High- and low-skill workers face different migration choices --- as in modern urban literature (Diamond 2016, Moretti 2011).
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item \textbf{资本本地化}（如住房）。本地资本稀缺推高租金和房价。
+  \item \textbf{迁移成本大且沉没。}工人不会迅速使工资均等；空间工资差长期存在。
+  \item \textbf{技能异质性。}高低技能工人面临不同的迁移决策 —— 见现代城市文献（Diamond 2016, Moretti 2011）。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Putting the pieces back \\ 把组件拼回来}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Each variation slots into the chain as a \emph{stage} or a \emph{block-level extension}:
+
+\vspace{0.3em}
+
+\begin{itemize}
+  \item Armington / non-tradables $\Rightarrow$ \emph{change} the env (add $p_j$, real wages).
+  \item Local housing $\Rightarrow$ \emph{add an axis} (housing) and a stage.
+  \item Skill heterogeneity $\Rightarrow$ \emph{add an axis} (skill) and stage closures keyed on it.
+\end{itemize}
+
+\vspace{0.3em}
+
+\textbf{The Stage abstraction absorbs each one cleanly.} We will not work through them today.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+每个变体都能作为 \emph{stage} 或 \emph{块级拓展} 嵌入链中：
+
+\vspace{0.3em}
+
+\begin{itemize}
+  \item Armington / 不可贸易 $\Rightarrow$ \emph{改} env（增加 $p_j$、实际工资）。
+  \item 本地住房 $\Rightarrow$ \emph{加一维}（住房）和一个 stage。
+  \item 技能异质性 $\Rightarrow$ \emph{加一维}（技能），stage 闭包按其分支。
+\end{itemize}
+
+\vspace{0.3em}
+
+\textbf{Stage 抽象都能干净吸收。}今天不展开。
+\end{column}
+\end{columns}
+\end{frame}
+
+
+% =============================================================
+\section[Wrap]{Wrap / 收尾}
+% =============================================================
+
+\begin{frame}{What we built today \\ 今天搭出了什么}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item A spatial Aiyagari with three locations.
+  \item \texttt{MigrationStage}: Gumbel discrete choice as a stage.
+  \item Preference shifters via cost-matrix column subtraction.
+  \item Indirect inference: calibrating $\alpha$ to match population shares.
+  \item Berry contraction as the calibration step.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+\begin{itemize}
+  \item 一个含三地点的空间 Aiyagari。
+  \item \texttt{MigrationStage}：把 Gumbel 离散选择写成 stage。
+  \item 偏好平移由成本矩阵列减法实现。
+  \item 间接推断：校准 $\alpha$ 匹配人口份额。
+  \item Berry 收缩作为校准步。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{The key insight \\ 关键洞察}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+The household block is the same generic object as before.
+
+\vspace{0.4em}
+
+\textbf{What changed today:}
+\begin{itemize}
+  \item A new \emph{axis} (location, discrete).
+  \item A new \emph{stage} (MigrationStage, Gumbel).
+  \item A new \emph{outer use}: not equilibrium clearing but \textbf{calibration}.
+\end{itemize}
+
+\vspace{0.4em}
+
+V/$\Lambda$ duality, the chain interface, and the inner solver are unchanged.
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+家庭模块和此前一样：通用对象。
+
+\vspace{0.4em}
+
+\textbf{今天变的是：}
+\begin{itemize}
+  \item 新\emph{维}（地点，离散）。
+  \item 新 \emph{stage}（MigrationStage、Gumbel）。
+  \item 新\emph{外层用法}：不是均衡清算，而是\textbf{校准}。
+\end{itemize}
+
+\vspace{0.4em}
+
+V/$\Lambda$ 对偶、链接口、内层求解器都不变。
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Tomorrow: bringing $r$ back inside \\ 明天：把 $r$ 拉回模型内}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+Today $r$ was exogenous --- a small-open-economy shortcut. Tomorrow we close the asset market \textbf{and} add aggregate uncertainty.
+
+\vspace{0.4em}
+
+\textbf{L7: Krusell--Smith.}
+\begin{itemize}
+  \item Aggregate productivity follows a Markov chain.
+  \item Prices depend on the entire wealth distribution $\Lambda$.
+  \item The "state explosion" problem and the K--S workaround.
+\end{itemize}
+\end{column}
+\hfill
+\begin{column}{0.46\textwidth}
+今天 $r$ 是外生的 —— 小型开放经济的捷径。明天我们关闭资产市场\textbf{并}引入总量不确定性。
+
+\vspace{0.4em}
+
+\textbf{第 7 讲：Krusell--Smith。}
+\begin{itemize}
+  \item 总量生产率服从 Markov 链。
+  \item 价格依赖于整个财富分布 $\Lambda$。
+  \item "状态爆炸"问题与 K--S 解法。
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Open Q\&A \\ 自由问答}
+\begin{center}
+\Huge ?
+\end{center}
+\end{frame}
+
+\end{document}

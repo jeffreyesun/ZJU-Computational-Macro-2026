@@ -22,9 +22,9 @@ under `taste_shocks = true` once the backward is updated to be the
 log-sum-exp (the codebase has a `#TODO Compute P_buy in backward pass`
 noting this).
 
-## Why `LogitChoice` doesn't fit as-is
+## Why `LogitChoiceStage` doesn't fit as-is
 
-The library's `LogitChoice` stage is a *uniform* logit over the full
+The library's `LogitChoiceStage` stage is a *uniform* logit over the full
 choice axis at every cell. `buy_home` is a **gated** logit: only the
 `h = 1` slice of cells faces the choice; cells with `h ≥ 2` pass
 through unchanged.
@@ -35,7 +35,7 @@ homeowners), but:
 
 1. The forward pass still iterates *every* cell rather than just the
    gated subset. Wasted work.
-2. The semantics of "unavailable action" inside `LogitChoice` is
+2. The semantics of "unavailable action" inside `LogitChoiceStage` is
    ad-hoc (currently: `-Inf` flow payoffs are skipped in the
    log-sum-exp, see `src/stages/logit_choice.jl:90-114`). It works,
    but the *gated logit* pattern is structurally cleaner than the
@@ -48,7 +48,7 @@ Two reasonable approaches:
 ### Option A — `GatedLogitChoice`
 
 A new stage that takes a per-cell "available" predicate `available(cell;
-env) -> Bool` *and* the usual `LogitChoice` parameters. Cells where
+env) -> Bool` *and* the usual `LogitChoiceStage` parameters. Cells where
 `available == false` are pass-through identity; cells where `available
 == true` run the standard logit. The kernel stores a gate mask + the
 choice-probability tensor restricted to gated cells.
@@ -66,12 +66,12 @@ BuyHome = GatedLogitChoice(layout;
 )
 ```
 
-Composition with the existing `LogitChoice` is structurally the same;
+Composition with the existing `LogitChoiceStage` is structurally the same;
 the forward kernel needs to know which cells to scatter from.
 
-### Option B — `LogitChoice` with first-class action-availability
+### Option B — `LogitChoiceStage` with first-class action-availability
 
-Add an `available::PayoffFn` field to `LogitChoice` itself (default:
+Add an `available::PayoffFn` field to `LogitChoiceStage` itself (default:
 "all actions available"). The backward log-sum-exp consults
 `available(cell, action; env)` and skips unavailable actions; the
 forward respects the same mask. The "gated" case `buy_home` then drops
@@ -87,14 +87,14 @@ gated case.
 
 Lean toward Option A. The gated-logit pattern recurs in HA macro (firm
 entry/exit, durable-good purchase, retirement timing), and a dedicated
-stage type reads more clearly in chains than a `LogitChoice` with a
+stage type reads more clearly in chains than a `LogitChoiceStage` with a
 non-trivial `available` predicate that the reader has to peer into.
-Option A also keeps `LogitChoice` lean for the cases where every
+Option A also keeps `LogitChoiceStage` lean for the cases where every
 action is genuinely available.
 
 ## Tests it would need
 
-- Backward log-sum-exp matches a hand-built `LogitChoice` on the gated
+- Backward log-sum-exp matches a hand-built `LogitChoiceStage` on the gated
   subset; identity elsewhere.
 - Forward scatter matches the same logit on the gated subset; identity
   elsewhere.

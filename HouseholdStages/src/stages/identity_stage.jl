@@ -18,30 +18,22 @@ function IdentityStage(layout::StateLayout;
                        element_type::Type{T} = Float64,
                        V_start::Union{Nothing, AbstractArray} = nothing,
                        Λ_end::Union{Nothing, AbstractArray}  = nothing) where {T<:Real}
-    dims = layout_size(layout)
-    Vs   = V_start === nothing ? zeros(T, dims) : V_start
-    Λe   = Λ_end   === nothing ? zeros(T, dims) : Λ_end
-    @assert typeof(Vs) === typeof(Λe) "IdentityStage: V_start and Λ_end must have the same concrete array type"
-    return IdentityStage{T, length(dims), typeof(layout), typeof(Vs)}(
+    (; Vs, Λe) = _alloc_VΛ(layout, T, V_start, Λ_end)
+    return IdentityStage{T, ndims(Vs), typeof(layout), typeof(Vs)}(
         layout, layout, Vs, Λe,
     )
 end
 
 static_env_deps(::Type{<:IdentityStage}) = NamedTuple()
 
-allocate(::IdentityStage{T,N}, ::Type{T2} = T) where {T,N,T2} = (nothing, nothing)
+allocate(::IdentityStage, ::Type = Float64) = (; kernel = nothing, scratch = nothing)
 
-function backward!(stage::IdentityStage{T,N},
-                   V_end::AbstractArray{T,N},
-                   env, kernel, scratch) where {T,N}
+function backward!(stage::IdentityStage, V_end, env, buffers)
     copyto!(stage.V_start, V_end)
     return stage.V_start
 end
 
-function forward!(stage::IdentityStage{T,N},
-                  Λ_start::AbstractArray{T,N},
-                  kernel, scratch,
-                  moments = nothing) where {T,N}
+function forward!(stage::IdentityStage, Λ_start, buffers, moments = nothing)
     copyto!(stage.Λ_end, Λ_start)
     return stage.Λ_end
 end

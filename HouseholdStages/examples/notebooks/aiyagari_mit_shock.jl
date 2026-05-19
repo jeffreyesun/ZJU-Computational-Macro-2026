@@ -4,14 +4,15 @@
 #
 # Self-contained driver: depends only on `HouseholdStages`. Same
 # three-stage household chain as `aiyagari.jl`, augmented with a
-# deterministic AR(1) TFP path `A_t` consumed by `aiyagari_prices`
-# during the transition. The walkthrough goes:
+# permanent TFP step `A_t = A_0 > 1` for all `t ≥ 1` consumed by
+# `aiyagari_prices` during the transition. The walkthrough goes:
 #
 #   1. Parameters + state layout.
 #   2. Household chain and workspace.
-#   3. Deterministic steady state (warm start for the transition).
-#   4. MIT-shock transition (rolled here, period-by-period).
-#   5. Sequence-space Jacobian sketch.
+#   3. Pre-shock steady state at A = 1.
+#   4. Post-shock steady state at A = A_0 (the new long-run).
+#   5. MIT-shock transition (rolled here, period-by-period).
+#   6. Sequence-space Jacobian sketch.
 
 using HouseholdStages
 using Printf
@@ -36,31 +37,23 @@ using Printf
 end
 Base.Broadcast.broadcastable(p::MITShockParams) = Ref(p)
 
-function exp_wealth_grid(lo::Real, hi::Real, n::Int; shift::Real = 1.0)
-    return [exp(t) * shift - shift + lo
-            for t in range(0.0, log((hi - lo + shift) / shift); length = n)]
-end
-
-function aiyagari_layout(p::MITShockParams)
-    return StateLayout(
-        StateAxis(:wealth, continuous_grid(exp_wealth_grid(p.w_min, p.w_max, p.N_w))),
-        StateAxis(:income, discrete_finite(p.y_grid)),
-    )
-end
-
 _u_crra(c, ::Val{1}) = log(c)
 _u_crra(c, ::Val{σ}) where σ = (c^(1 - σ)) / (1 - σ)
 u_crra(c, valσ::Val) = c < 0 ? -Inf : _u_crra(c, valσ)
 
 function aiyagari_household(p::MITShockParams)
-    layout = aiyagari_layout(p)
-    shock  = MarkovAlong(layout; axis = :income, transition = p.P_y)
-    receipt = WealthChange(layout;
-        wealth_post  = (cell; env) -> (e = env[]; (1 + e.r) * cell.wealth + e.w * cell.income),
-        wealth_axis  = :wealth,
-        closure_deps = (:r, :w),
+    layout = StateLayout(
+        StateAxis(:wealth, continuous_grid(p.w_min, p.w_max;
+                                           length = p.N_w, spacing = :log)),
+        StateAxis(:income, p.y_grid),
     )
-    savings = ConsumptionSavings(layout;
+
+    shock   = MarkovStage(layout; axis = :income, transition = p.P_y)
+    receipt = WealthChangeStage(layout;
+        wealth_post = (cell; env) -> (1 + env.r) * cell.wealth + env.w * cell.income,
+        wealth_axis = :wealth,
+    )
+    savings = ConsumptionSavingsStage(layout;
         β               = p.β,
         utility         = (cell, c; env) -> u_crra(c, Val(p.σ)),
         wealth_axis     = :wealth,
@@ -78,156 +71,156 @@ function aiyagari_prices(K::Real, A::Real, p::MITShockParams)
     return (; r, w)
 end
 
-function tfp_path(T::Int; A_0::Float64 = 1.05, ρ::Float64 = 0.85, A_ss::Float64 = 1.0)
-    A = zeros(T)
-    A[1] = A_0
-    for t in 2:T
-        A[t] = A_ss + ρ * (A[t-1] - A_ss)
-    end
-    return A
-end
+# Permanent step: A_t = A_0 for all t ≥ 1.
+tfp_path(T::Int; A_0::Float64 = 1.05) = fill(A_0, T)
 
-p      = MITShockParams()
-layout = aiyagari_layout(p)
-dims   = layout_size(layout)
-
+p = MITShockParams()
 @printf "Calibration: β = %.3f, σ = %.2f, α = %.2f, δ = %.2f\n" p.β p.σ p.α p.δ
-@printf "Layout: wealth %d × income %d = %d cells\n" dims[1] dims[2] prod(dims)
 
 
 # 2. Household Stage Chain and Workspace #
 #----------------------------------------#
 
-hh = aiyagari_household(p)
-caches, scratches = allocate(hh)
-V = zeros(Float64, dims...)
-Λ = fill(1.0 / prod(dims), dims...)
+hh      = aiyagari_household(p)
+buffers = allocate(hh)
+dims    = layout_size(first(hh.stages).input_layout)
 
-@printf "Λ_init: %d cells, ΣΛ = %.6f\n" length(Λ) sum(Λ)
+@printf "Layout: wealth %d × income %d = %d cells\n" dims[1] dims[2] prod(dims)
 
 
-# 3. Steady State (warm start) #
-#------------------------------#
+# 3. Pre-shock Steady State (A = 1) — Warm Start #
+#------------------------------------------------#
 
 # Tatonnement on K at A = 1. The library's
 # `solve_steady_state_given_env!` does the per-K inner work
 # (V backward to fixed point + Λ forward to stationarity); the outer
 # loop is rolled here.
 
-println("Solving deterministic steady state (A = 1.0)…")
-K_ss          = 5.0
-update_speed  = 0.05
-rtol_ss       = 2e-2
-K_err         = Inf
-ss_iters      = 0
-@time begin
-    while ss_iters < 500
-        env = (; K = K_ss, aiyagari_prices(K_ss, 1.0, p)...)
-        info = solve_steady_state_given_env!(hh, env, V, Λ, caches, scratches)
-        global V, Λ = info.V, info.Λ
-
+function solve_ss(hh, buffers, p; A::Float64, K_init::Float64,
+                  update_speed = 0.05, rtol = 2e-2, max_iter = 500)
+    K     = K_init
+    V, Λ  = nothing, nothing
+    K_err = Inf
+    iters = 0
+    while iters < max_iter
+        env  = (; K, aiyagari_prices(K, A, p)...)
+        res  = isnothing(V) ?
+            solve_steady_state_given_env!(hh, env, buffers) :
+            solve_steady_state_given_env!(hh, env, buffers; V_init = V, Λ_init = Λ)
+        V, Λ = res.V, res.Λ
         K_supplied = compute_moments(hh, env).K_supplied
-        global K_err = abs(K_supplied - K_ss) / K_ss
-        global ss_iters += 1
-
-        K_err <= rtol_ss && break
-
-        global K_ss += update_speed * (K_supplied - K_ss)
+        K_err = abs(K_supplied - K) / K
+        iters += 1
+        K_err <= rtol && break
+        K += update_speed * (K_supplied - K)
     end
+    (; r, w) = aiyagari_prices(K, A, p)
+    return (; K, V, Λ, r, w, iters)
 end
-(; r, w) = aiyagari_prices(K_ss, 1.0, p)
-@printf "  K_ss = %.4f, r_ss = %.4f, w_ss = %.4f; converged in %d iters\n" K_ss r w ss_iters
 
-V_ss = copy(V)
-Λ_ss = copy(Λ)
+println("Solving pre-shock steady state (A = 1.0)…")
+ss_pre = solve_ss(hh, buffers, p; A = 1.0, K_init = 5.0)
+@printf "  K_ss_pre = %.4f, r = %.4f, w = %.4f  (converged in %d iters)\n" ss_pre.K ss_pre.r ss_pre.w ss_pre.iters
 
 
-# 4. MIT-Shock Transition #
+# 4. Post-shock Steady State (A = A_0) — New Long-Run #
+#-----------------------------------------------------#
+
+println("Solving post-shock steady state (A = 1.05)…")
+A_0    = 1.05
+ss_post = solve_ss(hh, buffers, p; A = A_0, K_init = ss_pre.K)
+@printf "  K_ss_post = %.4f, r = %.4f, w = %.4f  (converged in %d iters)\n" ss_post.K ss_post.r ss_post.w ss_post.iters
+
+
+# 5. MIT-Shock Transition #
 #-------------------------#
 
-# Perfect-foresight transition under a one-time unanticipated TFP
-# impulse `A_0 = 1.05` with AR(1) decay `ρ = 0.85`. The transition
-# driver is rolled here, period by period:
-#   (a) backward sweep with terminal V_{T+1} = V_ss,
-#   (b) forward sweep with initial Λ_1 = Λ_ss (re-seating per-stage
-#       caches at each period-t env),
+# Perfect-foresight transition under a one-time unanticipated permanent
+# TFP step `A_0 = 1.05`. The transition driver is rolled here, period
+# by period:
+#   (a) backward sweep with terminal V_{T+1} = V_ss_post,
+#   (b) forward sweep with initial Λ_1 = Λ_ss_pre (re-seating per-stage
+#       kernels at each period-t env),
 #   (c) damped tatonnement update on the K-path.
 
 T       = 100
-A_path  = tfp_path(T; A_0 = 1.05, ρ = 0.85, A_ss = 1.0)
+A_path  = tfp_path(T; A_0 = A_0)
 damping = 0.2
 tol_tr  = 1e-3
 maxiter = 200
 
-V_path  = [copy(V_ss) for _ in 1:(T + 1)]
-Λ_path  = [zeros(Float64, dims...) for _ in 1:(T + 1)]
-Λ_path[1] .= Λ_ss
+K_ss_pre, V_ss_pre, Λ_ss_pre   = ss_pre.K,  ss_pre.V,  ss_pre.Λ
+K_ss_post, V_ss_post, Λ_ss_post = ss_post.K, ss_post.V, ss_post.Λ
 
-K_t        = fill(K_ss, T)
+V_path  = [copy(V_ss_post) for _ in 1:(T + 1)]
+Λ_path  = [zeros(Float64, dims...) for _ in 1:(T + 1)]
+Λ_path[1] .= Λ_ss_pre
+
+K_path     = collect(range(K_ss_pre, K_ss_post; length = T))
 K_supplied = zeros(T)
 res_history = Float64[]
 tr_iters   = 0
 res        = Inf
 
-println("\nSolving MIT-shock transition (T = $T, A_0 = 1.05, ρ = 0.85)…")
+println("\nSolving MIT-shock transition (permanent step A = $(A_0))…")
 @time begin
     while tr_iters < maxiter
-        # 4a. Backward sweep
+        # 5a. Backward sweep
         for t in T:-1:1
-            env = (; K = K_t[t], aiyagari_prices(K_t[t], A_path[t], p)...)
-            V_path[t] .= backward!(hh, V_path[t + 1], env, caches, scratches)
+            env = (; K = K_path[t], aiyagari_prices(K_path[t], A_path[t], p)...)
+            V_path[t] .= backward!(hh, V_path[t + 1], env, buffers)
         end
 
-        # 4b. Forward sweep — re-seat caches at each period-t env, then
+        # 5b. Forward sweep — re-seat kernels at each period-t env, then
         # push Λ and read off K_supplied.
         for t in 1:T
-            env = (; K = K_t[t], aiyagari_prices(K_t[t], A_path[t], p)...)
-            backward!(hh, V_path[t + 1], env, caches, scratches)
-            Λ_path[t + 1] .= forward!(hh, Λ_path[t], caches, scratches)
-            K_supplied[t]   = compute_moments(hh, env).K_supplied
+            env = (; K = K_path[t], aiyagari_prices(K_path[t], A_path[t], p)...)
+            backward!(hh, V_path[t + 1], env, buffers)
+            Λ_path[t + 1] .= forward!(hh, Λ_path[t], buffers)
+            K_supplied[t]  = compute_moments(hh, env).K_supplied
         end
 
-        # 4c. Residual + damped update
-        global res = maximum(abs, K_supplied .- K_t)
+        # 5c. Residual + damped update
+        global res = maximum(abs, K_supplied .- K_path)
         push!(res_history, res)
         global tr_iters += 1
 
         res <= tol_tr && break
 
-        K_t .= (1 - damping) .* K_t .+ damping .* K_supplied
+        K_path .= (1 - damping) .* K_path .+ damping .* K_supplied
     end
 end
 
 tr_converged = res <= tol_tr
 println(tr_converged ? "Converged in $tr_iters outer iterations." :
                         "DID NOT CONVERGE in $tr_iters outer iterations.")
-@printf "  K_ss            = %.4f\n" K_ss
-@printf "  K[1]   (impact) = %.4f  (Δ = %+0.4f)\n" K_t[1] (K_t[1] - K_ss)
-@printf "  K[5]            = %.4f  (Δ = %+0.4f)\n" K_t[5] (K_t[5] - K_ss)
-@printf "  K[20]           = %.4f  (Δ = %+0.4f)\n" K_t[20] (K_t[20] - K_ss)
-@printf "  K[50]           = %.4f  (Δ = %+0.4f)\n" K_t[50] (K_t[50] - K_ss)
-@printf "  K[100] (≈end)   = %.4f  (Δ = %+0.4f)\n" K_t[100] (K_t[100] - K_ss)
-@printf "  A[1] / A[10] / A[50] = %.4f / %.4f / %.4f\n" A_path[1] A_path[10] A_path[50]
+@printf "  K_ss_pre        = %.4f\n" K_ss_pre
+@printf "  K_ss_post       = %.4f\n" K_ss_post
+@printf "  K[1]   (impact) = %.4f  (Δ from pre = %+0.4f)\n" K_path[1] (K_path[1] - K_ss_pre)
+@printf "  K[5]            = %.4f\n" K_path[5]
+@printf "  K[20]           = %.4f\n" K_path[20]
+@printf "  K[50]           = %.4f\n" K_path[50]
+@printf "  K[100] (≈end)   = %.4f  (Δ from post = %+0.4f)\n" K_path[100] (K_path[100] - K_ss_post)
 println("  Residual history (last 5): ",
         round.(res_history[max(1, end - 4):end]; digits = 6))
 
 
-# 5. Sequence-Space-Jacobian Demo #
+# 6. Sequence-Space-Jacobian Demo #
 #--------------------------------#
 
-# Uses the SS caches (re-seated at the SS env) and a unit integrand
-# `cell -> cell.wealth`. Assembles a 30×30 fake-news matrix.
+# Uses the pre-shock SS kernels (re-seated at the SS env) and a unit
+# integrand `cell -> cell.wealth`. Assembles a 30×30 fake-news matrix.
 
-println("\nSequence-space-Jacobian sketch at the steady state (T_horizon = 30)…")
-ss_env = (; K = K_ss, aiyagari_prices(K_ss, 1.0, p)...)
-ssj_caches, ssj_scratches = allocate(hh)
-backward!(hh, V_ss, ss_env, ssj_caches, ssj_scratches)
-forward!(hh, Λ_ss, ssj_caches, ssj_scratches)
+println("\nSequence-space-Jacobian sketch at the pre-shock steady state (T_horizon = 30)…")
+ss_env = (; K = K_ss_pre, aiyagari_prices(K_ss_pre, 1.0, p)...)
+ssj_buffers = allocate(hh)
+backward!(hh, V_ss_pre, ss_env, ssj_buffers)
+forward!(hh, Λ_ss_pre, ssj_buffers)
 
 T_horizon = 30
-𝓔 = expectation_vectors(hh, cell -> cell.wealth, T_horizon, ssj_caches, ssj_scratches)
+𝓔 = expectation_vectors(hh, cell -> cell.wealth, T_horizon, ssj_buffers)
 @printf "  produced %d expectation arrays of shape %s\n" length(𝓔) string(size(𝓔[1]))
-@printf "  ⟨𝓔[1], Λ_ss⟩ = %.4f  (≈ K_ss = %.4f)\n" sum(𝓔[1] .* Λ_ss) K_ss
+@printf "  ⟨𝓔[1], Λ_ss⟩ = %.4f  (≈ K_ss_pre = %.4f)\n" sum(𝓔[1] .* Λ_ss_pre) K_ss_pre
 
 curlyY = ones(T_horizon)
 curlyD = [zeros(Float64, dims...) for _ in 1:T_horizon]

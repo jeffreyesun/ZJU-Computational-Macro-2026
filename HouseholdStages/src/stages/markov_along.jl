@@ -4,11 +4,11 @@ using LinearAlgebra: mul!
 A stage that applies a Markov transition along one named axis of the
 state layout. The K-operator is the transition matrix itself
 (V/θ-independent); backward applies `K^T` along the axis, forward
-applies `K`. Construct via `MarkovAlong(layout; axis, transition)`. The
+applies `K`. Construct via `MarkovStage(layout; axis, transition)`. The
 buffer eltype defaults to `eltype(transition)` and is parametric in `T`
 to support AD via [`with_eltype`](@ref).
 """
-struct MarkovAlong{M<:AbstractMatrix, T<:Real, N,
+struct MarkovStage{M<:AbstractMatrix, T<:Real, N,
                    LIn<:StateLayout, LOut<:StateLayout,
                    AV<:AbstractArray{T,N}} <: AbstractStage
     transition    :: M
@@ -21,7 +21,7 @@ struct MarkovAlong{M<:AbstractMatrix, T<:Real, N,
 end
 
 """
-    MarkovAlong(layout; axis, transition, element_type=eltype(transition)) -> MarkovAlong
+    MarkovStage(layout; axis, transition, element_type=eltype(transition)) -> MarkovStage
 
 Build a Markov stage on `layout` over the axis named `axis`. The
 transition matrix is square and must match the axis's size.
@@ -30,7 +30,7 @@ transition matrix is square and must match the axis's size.
 Set explicitly (e.g., to `ForwardDiff.Dual{…}`) when rebuilding the stage
 for AD — see [`lift_jacobian`](@ref).
 """
-function MarkovAlong(layout::StateLayout;
+function MarkovStage(layout::StateLayout;
                      axis::Symbol,
                      transition::AbstractMatrix,
                      element_type::Type{T} = eltype(transition),
@@ -41,17 +41,13 @@ function MarkovAlong(layout::StateLayout;
     @assert size(transition, 1) == size(transition, 2) "transition must be square"
     @assert size(transition, 1) == n_axis "transition size $(size(transition,1)) must match axis :$axis size $n_axis"
 
-    dims = layout_size(layout)
-    N    = length(dims)
-    Vs   = V_start === nothing ? zeros(T, dims) : V_start
-    Λe   = Λ_end   === nothing ? zeros(T, dims) : Λ_end
-    @assert typeof(Vs) === typeof(Λe) "MarkovAlong: V_start and Λ_end must have the same concrete array type; got $(typeof(Vs)) and $(typeof(Λe))"
-    return MarkovAlong{typeof(transition), T, N, typeof(layout), typeof(layout), typeof(Vs)}(
+    (; Vs, Λe) = _alloc_VΛ(layout, T, V_start, Λ_end)
+    return MarkovStage{typeof(transition), T, ndims(Vs), typeof(layout), typeof(layout), typeof(Vs)}(
         transition, axis, axis_dim, layout, layout, Vs, Λe,
     )
 end
 
-static_env_deps(::Type{<:MarkovAlong}) = NamedTuple()
+static_env_deps(::Type{<:MarkovStage}) = NamedTuple()
 
 # Allocate #
 #----------#
@@ -59,21 +55,21 @@ static_env_deps(::Type{<:MarkovAlong}) = NamedTuple()
 # Kernel = nothing: K is the transition matrix, V/θ-independent and on
 # the stage struct itself. Scratch holds two permuted-axis buffers for
 # non-trivial axis_dim.
-function allocate(stage::MarkovAlong{M,T,N}, ::Type{T2} = T) where {M,T,N,T2}
+function allocate(stage::MarkovStage, ::Type{T2} = eltype(stage.V_start)) where {T2}
     dims     = size(stage.V_start)
+    N        = length(dims)
     perm     = _bring_dim_first(N, stage.axis_dim)
     permdims = ntuple(i -> dims[perm[i]], N)
     perm_in  = zeros(T2, permdims)
     perm_out = zeros(T2, permdims)
-    return (nothing, (perm_in = perm_in, perm_out = perm_out))
+    return (; kernel = nothing, scratch = (; perm_in, perm_out))
 end
 
 # Backward #
 #----------#
 
-function backward!(stage::MarkovAlong{M,T,N},
-                   V_end::AbstractArray{T,N},
-                   env, kernel, scratch) where {M,T,N}
+function backward!(stage::MarkovStage, V_end, env, buffers)
+    (; kernel, scratch) = buffers
     _markov_apply!(stage.V_start, V_end, stage.transition,
                    stage.axis_dim, scratch.perm_in, scratch.perm_out)
     return stage.V_start
@@ -82,10 +78,8 @@ end
 # Forward #
 #---------#
 
-function forward!(stage::MarkovAlong{M,T,N},
-                  Λ_start::AbstractArray{T,N},
-                  kernel, scratch,
-                  moments = nothing) where {M,T,N}
+function forward!(stage::MarkovStage, Λ_start, buffers, moments = nothing)
+    (; kernel, scratch) = buffers
     _markov_apply!(stage.Λ_end, Λ_start, stage.transition',
                    stage.axis_dim, scratch.perm_in, scratch.perm_out)
     return stage.Λ_end

@@ -80,10 +80,10 @@ function aiyagari_main()
     u(c)            = c < 0 ? -Inf : (c^(1 - p.σ)) / (1 - p.σ)
     wealth_post(cell; env) = (1 + env[].r) * cell.wealth + env[].w * cell.income
 
-    shock   = MarkovAlong(layout; axis = :income, transition = p.P_y)
-    receipt = WealthChange(layout; wealth_post = wealth_post,
+    shock   = MarkovStage(layout; axis = :income, transition = p.P_y)
+    receipt = WealthChangeStage(layout; wealth_post = wealth_post,
                            wealth_axis = :wealth, closure_deps = (:r, :w))
-    savings = ConsumptionSavings(layout; β = p.β,
+    savings = ConsumptionSavingsStage(layout; β = p.β,
                                  utility = (cell, c; env) -> u(c),
                                  wealth_axis = :wealth,
                                  monotone_search = :divide_conquer)
@@ -91,7 +91,7 @@ function aiyagari_main()
     hh = lift_moments(shock ∘ₛ receipt ∘ₛ savings;
                       K_supplied = at_end(integrand = :wealth, reduce = sum))
 
-    caches, scratches = allocate(hh)
+    buffers = allocate(hh)
     dims = layout_size(layout)
     V    = zeros(dims...);   Λ = fill(1 / prod(dims), dims...)
     K    = 5.0
@@ -100,12 +100,12 @@ function aiyagari_main()
         w = (1 - p.α) * (K / p.L)^p.α
         env = (; K, r, w)
         for _ in 1:1500
-            V_new = backward!(hh, V, env, caches, scratches)
+            V_new = backward!(hh, V, env, buffers)
             maximum(abs, V_new .- V) < 1e-7 && (V .= V_new; break)
             V .= V_new
         end
         for _ in 1:20_000
-            Λ_new = forward!(hh, Λ, caches, scratches)
+            Λ_new = forward!(hh, Λ, buffers)
             maximum(abs, Λ_new .- Λ) < 1e-6 && (Λ .= Λ_new; break)
             Λ .= Λ_new
         end
@@ -131,29 +131,29 @@ lives at `HouseholdStages/examples/aiyagari/` and converges to
 
 Primitive stages, by category:
 
-- **Exogenous transitions.** `MarkovAlong` (Markov draw along a named
+- **Exogenous transitions.** `MarkovStage` (Markov draw along a named
   axis; the canonical V/θ-independent stage).
-- **Discrete choice.** `Argmax` (hard categorical choice over a named
-  axis; kernel = integer policy). `LogitChoice` (Gumbel-smoothed
-  choice; kernel = probability tensor). `Migration` (dedicated
+- **Discrete choice.** `ArgmaxStage` (hard categorical choice over a named
+  axis; kernel = integer policy). `LogitChoiceStage` (Gumbel-smoothed
+  choice; kernel = probability tensor). `MigrationStage` (dedicated
   cost-matrix logit on a location axis — no user closure for the
   cost, just a matrix + dispersion ε).
-- **Wealth dynamics.** `WealthChange` (deterministic wealth transition
+- **Wealth dynamics.** `WealthChangeStage` (deterministic wealth transition
   via a `wealth_post(cell; env)` closure; backward linear-V
   interpolation, forward share-based redistribution).
-  `AssetPriceChange` (sugar over `WealthChange` for `b_post = b_pre +
-  (q − q_last) · h`). `ConsumptionSavings` (choice of `b_end` on the
+  `AssetPriceChangeStage` (sugar over `WealthChangeStage` for `b_post = b_pre +
+  (q − q_last) · h`). `ConsumptionSavingsStage` (choice of `b_end` on the
   wealth grid; implicit budget `c = b_in − b_end`; monotone-policy
   argmax with `:sequential` or `:divide_conquer` inner walk).
-  `BorrowingConstraint` (`−∞` mask on infeasible cells; identity on
+  `BorrowingConstraintStage` (`−∞` mask on infeasible cells; identity on
   Λ; supports both precomputed boolean masks and env-dependent
   closures).
 - **Glue.** `UtilityStage` (additive state-only flow utility;
   identity on Λ; also serves as the *terminal* / bequest stage with
-  `V_end = 0`). `IdentityStage` (no-op). `ForgetfulSum` (drop an
+  `V_end = 0`). `IdentityStage` (no-op). `ForgetfulSumStage` (drop an
   axis; the canonical layout-changing stage).
 
-**Composition.** `chain = a ∘ₛ b ∘ₛ c` produces a `StageChain`
+**Composition.** `chain = a ∘ₛ b ∘ₛ c` produces a `ChainStage`
 (allocation-free `@generated` unroll). **Product.** `prod = a ×ₛ b`
 forms a Cartesian product over independent state axes, with kernel
 the direct sum. **Replication.** `replicate_age(stage, N)` lifts a
@@ -173,7 +173,7 @@ stage to a life cycle by stacking it along an `:age` axis.
   the workspace environment.
 
 **Sequence-space utilities.** `expectation_vectors(chain, integrand,
-T, kernels, scratches)` realizes Step 2 of the SSJ fake-news
+T, buffers)` realizes Step 2 of the SSJ fake-news
 algorithm (iterate `forward_adjoint!` to propagate an integrand
 under `Kᵀ`). `build_F(curlyY, curlyD, curlyE)` is Step 3 (assemble
 the fake-news matrix). `J_from_F(F)` is Step 4 (anti-diagonal
@@ -187,10 +187,10 @@ outer loop end to end; the library supplies stages and lifts only.
 
 | Example | Chain | Solver | Headline |
 |---|---|---|---|
-| `aiyagari/` | `MarkovAlong ∘ₛ WealthChange ∘ₛ ConsumptionSavings` | tatonnement on K | `K = 5.6852` |
+| `aiyagari/` | `MarkovStage ∘ₛ WealthChangeStage ∘ₛ ConsumptionSavingsStage` | tatonnement on K | `K = 5.6852` |
 | `krusell_smith/` | same chain, K-S parameters (employed/unemployed `y_grid`, larger `w_max`, K-S `δ`) | tatonnement on K | `K = 12.88` |
 | `aiyagari_mit_shock/` | same chain, plus a transition path | damped Picard on `{K_t}` + SSJ T×T fake-news Jacobian | `K[5] ≈ 5.86` peak |
-| `spatial/` | adds `Migration` between income shock and receipt | damped Picard on `(K_home, K_abroad)` | `K_home = K_abroad = 2.8305` |
+| `spatial/` | adds `MigrationStage` between income shock and receipt | damped Picard on `(K_home, K_abroad)` | `K_home = K_abroad = 2.8305` |
 
 All four converge end-to-end at `N_w = 400`; the test suite is at
 `450 / 450`.
@@ -221,7 +221,7 @@ All four converge end-to-end at `N_w = 400`; the test suite is at
 `HouseholdStages` is closest in spirit to SSJ (Auclert, Bardóczy,
 Rognlie, Straub 2021), whose `HetBlock` family exposes the same
 household-layer decomposition; its stage primitives
-(`Continuous1D / 2D`, `Exogenous`, `LogitChoice`) instantiate the
+(`Continuous1D / 2D`, `Exogenous`, `LogitChoiceStage`) instantiate the
 same kernel-producing signature, the V/Λ duality identity is
 implicit in the back / forward-pass structure, and the fake-news
 algorithm is the same machinery as `expectation_vectors` +

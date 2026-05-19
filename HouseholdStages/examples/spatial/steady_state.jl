@@ -7,11 +7,6 @@
 # `HouseholdStages.solve_steady_state_given_env!`; the outer
 # tatonnement is rolled here (see `PROJECT_PLAN.md` Decisions log
 # 2026-05-18 for the principle).
-#
-# Each location's capital market clears independently — no inter-
-# location trade. The outer fixed point is 2-D, so bisection isn't
-# applicable; absolute damped tatonnement on the K-pair is the
-# simplest stable choice in the symmetric calibration.
 
 include("model.jl")
 
@@ -20,7 +15,7 @@ using Printf
 """
 Solve the spatial two-location steady state by damped tatonnement on
 the K-pair. The tolerance `tol = 0.25` (≈8% of per-location K) accepts
-the hard-argmax `ConsumptionSavings` step-function floor.
+the hard-argmax `ConsumptionSavingsStage` step-function floor.
 """
 function spatial_steady_state(; p = params,
                                 K_home_0::Float64   = 3.0,
@@ -29,11 +24,8 @@ function spatial_steady_state(; p = params,
                                 tol::Float64        = 0.25,
                                 maxiter::Int        = 120,
                                 verbosity::Int      = 1)
-    hh   = spatial_household(p)
-    caches, scratches = allocate(hh)
-    dims = layout_size(spatial_layout(p))
-    V    = zeros(Float64, dims...)
-    Λ    = fill(1.0 / prod(dims), dims...)
+    hh      = spatial_household(p)
+    buffers = allocate(hh)
 
     K_home, K_abroad = K_home_0, K_abroad_0
     iterations = 0
@@ -41,13 +33,17 @@ function spatial_steady_state(; p = params,
     res_history = Tuple{Float64, Float64}[]
     moments = nothing
     env     = nothing
+    V, Λ    = nothing, nothing   # warm-start placeholders
 
     while iterations < maxiter
         pr  = spatial_prices(K_home, K_abroad, p)
         env = (; K_home, K_abroad, pr.r_home, pr.w_home, pr.r_abroad, pr.w_abroad)
 
-        info = solve_steady_state_given_env!(hh, env, V, Λ, caches, scratches)
-        V, Λ = info.V, info.Λ
+        res = isnothing(V) ?
+            solve_steady_state_given_env!(hh, env, buffers) :
+            solve_steady_state_given_env!(hh, env, buffers;
+                                          V_init = V, Λ_init = Λ)
+        (; V, Λ, vfi_iters, lambda_iters) = res
         moments = compute_moments(hh, env)
 
         res_h = moments.K_home   - K_home
@@ -59,7 +55,7 @@ function spatial_steady_state(; p = params,
             "  iter %d: K_h = %.3f, K_a = %.3f → Ks_h = %.3f, Ks_a = %.3f; res = (%+.4f, %+.4f); VFI %d / Λ %d\n",
             iterations, K_home, K_abroad,
             moments.K_home, moments.K_abroad, res_h, res_a,
-            info.vfi_iters, info.lambda_iters)
+            vfi_iters, lambda_iters)
 
         if max(abs(res_h), abs(res_a)) < tol
             converged = true

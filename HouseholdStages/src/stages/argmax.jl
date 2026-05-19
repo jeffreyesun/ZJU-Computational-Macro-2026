@@ -7,17 +7,15 @@ the kernel stores the integer policy.
 `flow_payoff(cell, action; env)` is the period payoff at the cell of
 taking action `action`; `-Inf` is treated as "unavailable" and skipped.
 `next_state_idx(cell, action) -> Int` returns the integer index along
-`choice_axis` of the cell reached by `action`. `closure_deps` lists env
-fields the two closures read.
+`choice_axis` of the cell reached by `action`.
 """
-struct Argmax{F, BF,
+struct ArgmaxStage{F, BF,
               LIn<:StateLayout, LOut<:StateLayout,
-              N, D, T<:Real, AV<:AbstractArray{T,N}} <: AbstractStage
+              N, T<:Real, AV<:AbstractArray{T,N}} <: AbstractStage
     choice_axis    :: Symbol
     choice_dim     :: Int
     flow_payoff    :: F
     next_state_idx :: BF
-    closure_deps   :: NTuple{D, Symbol}
     input_layout   :: LIn
     output_layout  :: LOut
     V_start        :: AV
@@ -26,57 +24,48 @@ struct Argmax{F, BF,
 end
 
 """
-    Argmax(layout; choice_axis, flow_payoff, next_state_idx,
-                  closure_deps=(), element_type=Float64) -> Argmax
+    ArgmaxStage(layout; choice_axis, flow_payoff, next_state_idx,
+                  element_type=Float64) -> ArgmaxStage
 
-Construct an [`Argmax`](@ref) stage. `flow_payoff(cell, action; env)`
+Construct an [`ArgmaxStage`](@ref) stage. `flow_payoff(cell, action; env)`
 and `next_state_idx(cell, action)` are user closures (see the struct
 docstring).
 """
-function Argmax(layout::StateLayout;
+function ArgmaxStage(layout::StateLayout;
                 choice_axis::Symbol,
                 flow_payoff,
                 next_state_idx,
-                closure_deps::NTuple{D, Symbol} = (),
                 element_type::Type{T} = Float64,
                 V_start::Union{Nothing, AbstractArray} = nothing,
-                Λ_end::Union{Nothing, AbstractArray}  = nothing) where {D, T<:Real}
+                Λ_end::Union{Nothing, AbstractArray}  = nothing) where {T<:Real}
     choice_dim = axis_position(layout, choice_axis)
-    dims       = layout_size(layout)
-    N          = length(dims)
-    Vs         = @something V_start zeros(T, dims)
-    Λe         = @something Λ_end   zeros(T, dims)
-    @assert typeof(Vs) === typeof(Λe) "Argmax: V_start and Λ_end must have the same concrete array type"
-    policy     = zeros(Int, dims)
-    return Argmax{typeof(flow_payoff),
+    (; Vs, Λe) = _alloc_VΛ(layout, T, V_start, Λ_end)
+    N          = ndims(Vs)
+    policy     = zeros(Int, size(Vs))
+    return ArgmaxStage{typeof(flow_payoff),
                   typeof(next_state_idx),
                   typeof(layout), typeof(layout),
-                  N, D, T, typeof(Vs)}(
-        choice_axis, choice_dim, flow_payoff, next_state_idx, closure_deps,
+                  N, T, typeof(Vs)}(
+        choice_axis, choice_dim, flow_payoff, next_state_idx,
         layout, layout, Vs, Λe, policy,
     )
 end
 
-static_env_deps(::Type{<:Argmax}) = NamedTuple()
+static_env_deps(::Type{<:ArgmaxStage}) = NamedTuple()
 
-function allocate(stage::Argmax{F,BF,LIn,LOut,N,D,T},
-                  ::Type{T2} = T) where {F,BF,LIn,LOut,N,D,T,T2}
-    return ((policy = stage.policy,), nothing)
-end
+allocate(stage::ArgmaxStage, ::Type = Float64) =
+    (; kernel = (; policy = stage.policy), scratch = nothing)
 
 # Backward #
 #----------#
 
-function backward!(stage::Argmax{F,BF,LIn,LOut,N,D,T},
-                   V_end::AbstractArray{T,N},
-                   env, kernel, scratch) where {F,BF,LIn,LOut,N,D,T}
-    layout     = stage.input_layout
-    choice_dim = stage.choice_dim
-    actions    = axisvalues(layout.axes[choice_dim])
-    V_start    = stage.V_start
-    policy     = stage.policy
+function backward!(stage::ArgmaxStage, V_end, env, buffers)
+    (; kernel, scratch) = buffers
+    (; input_layout, choice_dim, V_start, policy) = stage
+    actions = axisvalues(input_layout.axes[choice_dim])
+    T = eltype(V_start)
 
-    for (idx, cell) in cells(layout)
+    for (idx, cell) in cells(input_layout)
         in_idxs = Tuple(idx)
         ci_in   = CartesianIndex(in_idxs)
 
@@ -93,7 +82,7 @@ function backward!(stage::Argmax{F,BF,LIn,LOut,N,D,T},
                 best_a_i = a_i
             end
         end
-        best_a_i == 0 && error("Argmax: no finite-payoff action at cell $cell")
+        best_a_i == 0 && error("ArgmaxStage: no finite-payoff action at cell $cell")
 
         V_start[ci_in] = best_v
         policy[ci_in]  = best_a_i
@@ -104,18 +93,14 @@ end
 # Forward #
 #---------#
 
-function forward!(stage::Argmax{F,BF,LIn,LOut,N,D,T},
-                  Λ_start::AbstractArray{T,N},
-                  kernel, scratch,
-                  moments = nothing) where {F,BF,LIn,LOut,N,D,T}
-    layout     = stage.input_layout
-    choice_dim = stage.choice_dim
-    actions    = axisvalues(layout.axes[choice_dim])
-    Λ_end      = stage.Λ_end
-    policy     = stage.policy
+function forward!(stage::ArgmaxStage, Λ_start, buffers, moments = nothing)
+    (; kernel, scratch) = buffers
+    (; input_layout, choice_dim, Λ_end, policy) = stage
+    actions = axisvalues(input_layout.axes[choice_dim])
+    T = eltype(Λ_end)
 
     fill!(Λ_end, zero(T))
-    for (idx, cell) in cells(layout)
+    for (idx, cell) in cells(input_layout)
         in_idxs = Tuple(idx)
         ci_in   = CartesianIndex(in_idxs)
         mass    = Λ_start[ci_in]

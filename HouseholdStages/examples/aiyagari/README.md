@@ -7,7 +7,7 @@ household layer decomposed into a three-stage chain.
 The within-period problem is
 
 ```
-IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavings
+IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage
 ```
 
 a Markov draw on the income axis, a deterministic wealth update
@@ -59,7 +59,7 @@ end
 ```
 
 The exponential grid is dense near `w_min` (where the borrowing
-constraint binds) and coarse at the top. `WealthChange.backward`
+constraint binds) and coarse at the top. `WealthChangeStage.backward`
 linearly *extrapolates* V past the top knot; an evenly spaced grid
 amplifies V by `extrap_distance / top_step` each pass and breaks the
 Bellman contraction. The exponential transform makes the top span far
@@ -73,7 +73,7 @@ applies `P`, kernel is the transition matrix itself.
 
 ```julia
 function aiyagari_income_shock(layout, p = aiyagari_params)
-    return MarkovAlong(layout; axis = :income, transition = p.P_y)
+    return MarkovStage(layout; axis = :income, transition = p.P_y)
 end
 ```
 
@@ -89,7 +89,7 @@ function aiyagari_income_receipt(layout, p = aiyagari_params)
         e = env[]
         return (1 + e.r) * cell.wealth + e.w * cell.income
     end
-    return WealthChange(layout;
+    return WealthChangeStage(layout;
         wealth_post  = wp,
         wealth_axis  = :wealth,
         closure_deps = (:r, :w),
@@ -105,12 +105,12 @@ of the sequential walk's `O(n_w + Σ bound_widths)`). The D&C path
 requires the savings policy to be non-decreasing in input wealth
 (non-negative MPS); concave `u` + linear budget guarantees this.
 If your payoff isn't concave-and-linear, leave it at
-`:sequential` — see the `ConsumptionSavings` docstring for the
+`:sequential` — see the `ConsumptionSavingsStage` docstring for the
 correctness caveat.
 
 ```julia
 function aiyagari_consumption_savings(layout, p = aiyagari_params)
-    return ConsumptionSavings(layout;
+    return ConsumptionSavingsStage(layout;
         β               = p.β,
         utility         = (cell, c; env) -> u_crra(c, Val(p.σ)),
         wealth_axis     = :wealth,
@@ -130,7 +130,7 @@ u_crra(c, valσ::Val) = c < 0 ? -Inf : _u_crra(c, valσ)
 
 ## Step 4 — Compose with `∘ₛ`, attach the moment
 
-`∘ₛ` builds a `StageChain` (allocation-free `@generated` unroll under
+`∘ₛ` builds a `ChainStage` (allocation-free `@generated` unroll under
 the hood). `lift_moments` wraps the chain with a moment-emission
 closure: `K_supplied = at_end(integrand = :wealth, reduce = sum)`
 says "after one forward pass, integrate `wealth` against the
@@ -157,7 +157,7 @@ function aiyagari_steady_state(p = aiyagari_params;
                                K_init = 5.0, update_speed = 0.05,
                                rtol = 2e-2, max_iter = 500)
     hh = aiyagari_household(p)
-    caches, scratches = allocate(hh)
+    buffers = allocate(hh)
 
     dims = layout_size(aiyagari_layout(p))
     V    = zeros(Float64, dims...)
@@ -169,8 +169,8 @@ function aiyagari_steady_state(p = aiyagari_params;
     while abs(K_err) > rtol
         (; r, w) = aiyagari_prices(K, p)
         env = (; K, r, w)
-        V   = aiyagari_vfi!(hh, env, V, caches, scratches).V
-        Λ   = aiyagari_lambda!(hh, Λ, caches, scratches).Λ
+        V   = aiyagari_vfi!(hh, env, V, buffers).V
+        Λ   = aiyagari_lambda!(hh, Λ, buffers).Λ
         (; K_supplied) = compute_moments(hh, env)
         K_err = (K_supplied - K) / K
         K += update_speed * K_err * K
@@ -201,7 +201,7 @@ Aiyagari precautionary-savings effect.
 
 Drop-in plots: marginal `K_supplied` along the wealth axis (the
 savings curve), the stationary Λ distribution, or the policy
-`b_end(b_in, y)` recovered from `caches.savings.policy`. The
+`b_end(b_in, y)` recovered from `buffers[3].kernel.policy`. The
 notebook `../notebooks/aiyagari.jl` walks through these
 interactively.
 
