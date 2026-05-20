@@ -288,7 +288,7 @@ Steps 2–4 of the SSJ fake-news algorithm
 
 Step 1 (per-period direct effects of a shock) is model-specific —
 typically a finite-difference perturbation of env around the steady
-state. `examples/aiyagari_mit_shock/ssj.jl` walks the full pipeline
+state. `examples/aiyagari_mit_shock/ssj.jl` runs the full pipeline
 end-to-end on the Aiyagari chain.
 
 ## Lifts

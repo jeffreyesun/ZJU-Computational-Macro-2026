@@ -197,8 +197,8 @@ generated chain backward at the chain level) **and** each component's
 buffer cache is seated independently inside the per-component
 `backward!`. Both invariants hold simultaneously: a user can
 cache-check at the chain level or at any per-stage level. Cache
-invalidation propagates: `invalidate!(chain.buffer)` walks the
-component buffers.
+invalidation propagates: `invalidate!(chain.buffer)` iterates over
+the component buffers.
 
 `solve_transition_given_env_path!` doesn't need cache checking — it
 allocates a fresh per-period Buffer for each `t`, so the kernel
@@ -228,9 +228,9 @@ Nested `ChainStageSpec`s are auto-flattened: `(a ∘ b) ∘ c` produces a
 attached before composition: `∘` refuses to compose a chain that
 already carries moments (call `define_moment!` last).
 
-`ChainStage`'s `backward!` and `forward!` walk the component tuple via
-`@generated`. The naive runtime loop `for i in n:-1:1` over a
-heterogeneous tuple is type-unstable (each slot has a different
+`ChainStage`'s `backward!` and `forward!` iterate over the component
+tuple via `@generated`. The naive runtime loop `for i in n:-1:1` over
+a heterogeneous tuple is type-unstable (each slot has a different
 concrete Spec type); the `@generated` unroll recovers full type
 stability and brings chain backward+forward to within ~1.1×–1.2× of
 hand-coded reference kernels at example sizes.
@@ -469,9 +469,9 @@ envelope theorem to reuse the K materialised at the primal eval point
 as a frozen linear operator for the VJP, with subgradients at tie
 boundaries.
 
-The chain's adjoint walks are themselves chain rules: `ChainStage`'s
-`backward_adjoint!` walks components in forward order;
-`forward_adjoint!` walks in reverse. Both read from `spec.stages[i]`
+The chain's adjoint passes implement the chain rule: `ChainStage`'s
+`backward_adjoint!` iterates over components in forward order;
+`forward_adjoint!` iterates in reverse. Both read from `spec.stages[i]`
 and `buffer.stages[i]` in lockstep.
 
 ### `lift_gpu(stage)` — scaffolded
@@ -508,7 +508,7 @@ and cumulate F" is one of the structural payoffs of the K-operator
 framing. The companion paper proves the equivalence; the library
 realises it as code.
 
-`examples/aiyagari_mit_shock/ssj.jl` walks the full pipeline on the
+`examples/aiyagari_mit_shock/ssj.jl` runs the full pipeline on the
 3-stage Aiyagari chain.
 
 ## 14. Conventions for stage authors

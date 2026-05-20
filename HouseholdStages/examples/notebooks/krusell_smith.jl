@@ -102,7 +102,7 @@ dims = layout_size(first(hh.spec.stages).input_layout)
 # K-S sits at `β(1+r) ≈ 1`, so K_supplied(K) is highly nonlinear near
 # the equilibrium: a small change in K can flip the argmax policy and
 # shift K_supplied by ~20%. The outer driver in section 4 damps
-# heavily to walk through this noisy region.
+# heavily to step through this noisy region.
 
 K_trial   = 13.6
 env_trial = (; K = K_trial, A = 1.0, ks_prices(K_trial, 1.0, p)...)

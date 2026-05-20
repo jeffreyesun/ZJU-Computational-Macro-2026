@@ -20,7 +20,7 @@ IncomeShock ∘ IncomeReceipt ∘ ConsumptionSavingsStage
   via share-weighted accumulation.
 - **`ConsumptionSavingsStage`** — pick `b_end` on the wealth grid;
   implicit budget `c = b_in − b_end`; CRRA utility. Inner argmax via
-  the divide-and-conquer monotone-policy walk (`O(n_w log n_w)` per
+  the divide-and-conquer monotone-policy search (`O(n_w log n_w)` per
   slice; concave `u` + linear budget gives the required non-negative
   MPS).
 

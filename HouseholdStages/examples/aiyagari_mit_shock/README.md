@@ -110,7 +110,7 @@ the Λ-side `compute_moments` does.
 library ships them for `MarkovStage`, `WealthChangeStage`,
 `ConsumptionSavingsStage`, `LogitChoiceStage`, `MigrationStage`,
 `ArgmaxStage`, `IdentityStage`, `ForgetfulSumStage`, and the
-`ChainStage` / `ProductStage` walks. `WealthChangeStage`'s
+`ChainStage` / `ProductStage` adjoint methods. `WealthChangeStage`'s
 `backward_adjoint!` is currently a stub — not needed by the
 sequence-space pipeline (which only uses `forward_adjoint!`); see
 the package-level Status section.
