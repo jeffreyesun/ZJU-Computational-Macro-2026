@@ -2,7 +2,7 @@
 # Aggregate-Jacobian Utilities    #
 # (fake-news Steps 2, 3, 4)       #
 ###################################
-
+#
 # Outer-loop accounting steps in SSJ's fake-news algorithm
 # (stages_paper/notes/proofs.md Cell 1.7). Convert per-stage tangents
 # into sequence-space Jacobians at the steady state. Step 1 (per-stage
@@ -10,7 +10,7 @@
 # via `lift_jacobian(stage; mode=:forward)`.
 
 """
-    expectation_vectors(chain, integrand, T, buffers) -> Vector{Array}
+    expectation_vectors(chain, integrand, T) -> Vector{Array}
 
 Compute the time-t expectation of `integrand` viewed from the
 beginning of the period, for t = 0, 1, ..., T-1, at the steady state
@@ -21,26 +21,18 @@ cell of the chain's terminal output layout to produce the t=0 array.
 For t > 0, the result is obtained by applying the chain's K-transpose
 (i.e., the chain's `forward_adjoint!`) to the previous time's array.
 
-`buffers` is the workspace from `allocate(chain)`; the kernels in it
-should have been populated by a call to `backward!(chain, V_terminal,
-env_ss, buffers)` at the steady state. The K used in the K-transpose
-iteration is the kernel materialized at that backward-pass evaluation
-point. (No env argument here — env was consumed by the prior backward
-pass.)
+The chain's kernels (stored in `chain.buffer`) should have been
+populated by a prior `backward!(chain, V_terminal, env_ss)` call at
+the steady state. The K used in the K-transpose iteration is the
+kernel materialized at that backward-pass evaluation point. (No env
+argument here — env was consumed by the prior backward pass.)
 
 This corresponds to Step 2 of SSJ's fake-news algorithm.
 
 Returns a Vector of length T, where each element is the t-th
 expectation array on the chain's terminal-output layout.
 """
-# Terminal output layout — used to size the integrand-broadcast array.
-function _terminal_out_layout(s::AbstractStage)
-    hasfield(typeof(s), :output_layout) && return s.output_layout
-    error("expectation_vectors: cannot infer output layout from $(typeof(s))")
-end
-_terminal_out_layout(c::ChainStage) = c.out_layout
-
-function expectation_vectors(chain, integrand::Function, T::Int, buffers)
+function expectation_vectors(chain::AbstractStage, integrand::Function, T::Int)
     @assert T ≥ 1 "expectation_vectors: T must be at least 1"
     out_layout = _terminal_out_layout(chain)
     dims = layout_size(out_layout)
@@ -54,19 +46,24 @@ function expectation_vectors(chain, integrand::Function, T::Int, buffers)
     push!(results, copy(E0))
     E_prev = E0
     for _ in 2:T
-        # K-transpose acts on functions; our `forward_adjoint!` realizes
+        # K-transpose acts on functions; `forward_adjoint!` realizes
         # this (the VJP of forward = K maps a measure-sensitivity by
-        # K-transpose).
-        E_next = forward_adjoint!(chain, E_prev, buffers)
+        # K-transpose). The bundled-stage adjoint reads kernels from
+        # `chain.buffer` and is keyed on Spec internally.
+        E_next = forward_adjoint!(chain, E_prev)
         push!(results, copy(E_next))
         E_prev = E_next
     end
     return results
 end
 
+# Terminal output layout — used to size the integrand-broadcast array.
+_terminal_out_layout(s::AbstractStage) = s.spec.output_layout
+_terminal_out_layout(c::ChainStage)    = c.spec.out_layout
+
 # Eltype helper: fish out the buffer eltype of the chain's first stage.
-eltype_from_chain(chain::ChainStage) = eltype(chain.stages[1].V_start)
-eltype_from_chain(s::AbstractStage)  = eltype(s.V_start)
+eltype_from_chain(chain::ChainStage) = eltype(chain.buffer.stages[1].V_start)
+eltype_from_chain(s::AbstractStage)  = eltype(s.buffer.V_start)
 
 """
     J_from_F(F::AbstractMatrix) -> Matrix

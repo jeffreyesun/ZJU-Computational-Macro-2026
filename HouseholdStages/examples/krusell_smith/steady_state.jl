@@ -26,8 +26,7 @@ function ks_steady_state(p = ks_params;
                          rtol             = 5e-2,
                          max_iter         = 500,
                          verbosity        = 1)
-    hh      = ks_household(p)
-    buffers = allocate(hh)
+    hh = ks_household(p)
 
     K = K_init
     iterations = 0
@@ -38,12 +37,12 @@ function ks_steady_state(p = ks_params;
     while iterations < max_iter
         env  = (; K, A, ks_prices(K, A, p)...)
         res = isnothing(V) ?
-            solve_steady_state_given_env!(hh, env, buffers) :
-            solve_steady_state_given_env!(hh, env, buffers;
+            solve_steady_state_given_env!(hh, env) :
+            solve_steady_state_given_env!(hh, env;
                                           V_init = V, Λ_init = Λ)
-        (; V, Λ, vfi_iters, lambda_iters) = res
+        (; V, Λ, history) = res; (; vfi_iters, lambda_iters) = history
 
-        K_supplied = compute_moments(hh, env).K_supplied
+        K_supplied = compute_moments(hh, Λ, env).K_supplied
         K_err = abs(K_supplied - K) / K
         push!(residual_history, K_err)
         iterations += 1

@@ -6,7 +6,7 @@
 # within-period structure as Aiyagari, specialised to the K-S
 # employed/unemployed income process:
 #
-#     IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage
+#     IncomeShock ∘ IncomeReceipt ∘ ConsumptionSavingsStage
 #
 # Calibration: β = 0.96 (annual-style), log utility (γ = 1), two-state
 # income with `y_unemp = 0.07` (canonical K-S — a strictly positive
@@ -68,7 +68,7 @@ function ks_household(p::KSParams)
         wealth_axis     = :wealth,
         monotone_search = :divide_conquer,
     )
-    return lift_moments(shock ∘ₛ receipt ∘ₛ savings;
+    return define_moments!(shock ∘ receipt ∘ savings;
         K_supplied = at_end(integrand = :wealth, reduce = sum),
     )
 end
@@ -87,12 +87,11 @@ L_eff = ks_effective_labor(p.P_y, p.y_grid)
 @printf "Income process: y_unemp = %.2f, y_emp = %.2f, L_eff = %.4f\n" p.y_grid[1] p.y_grid[2] L_eff
 
 
-# 2. Household Stage Chain and Workspace #
-#----------------------------------------#
+# 2. Household Stage Chain #
+#--------------------------#
 
-hh      = ks_household(p)
-buffers = allocate(hh)
-dims    = layout_size(first(hh.stages).input_layout)
+hh   = ks_household(p)
+dims = layout_size(first(hh.spec.stages).input_layout)
 
 @printf "Layout: wealth %d × income %d = %d cells\n" dims[1] dims[2] prod(dims)
 
@@ -107,12 +106,12 @@ dims    = layout_size(first(hh.stages).input_layout)
 
 K_trial   = 13.6
 env_trial = (; K = K_trial, A = 1.0, ks_prices(K_trial, 1.0, p)...)
-(; V, Λ, vfi_iters, lambda_iters) =
-    solve_steady_state_given_env!(hh, env_trial, buffers)
-moms_trial = compute_moments(hh, env_trial)
+res_trial  = solve_steady_state_given_env!(hh, env_trial)
+V, Λ       = res_trial.V, res_trial.Λ
+moms_trial = compute_moments(hh, Λ, env_trial)
 
 @printf "K_trial = %.4f → K_supplied = %.4f (residual = %+.4f)\n" K_trial moms_trial.K_supplied (moms_trial.K_supplied - K_trial)
-@printf "  VFI: %d iters; Λ: %d iters; r = %.4f, w = %.4f, β(1+r) = %.5f\n" vfi_iters lambda_iters env_trial.r env_trial.w p.β * (1 + env_trial.r)
+@printf "  VFI: %d iters; Λ: %d iters; r = %.4f, w = %.4f, β(1+r) = %.5f\n" res_trial.history.vfi_iters res_trial.history.lambda_iters env_trial.r env_trial.w p.β * (1 + env_trial.r)
 
 
 # 4. Outer Tatonnement #
@@ -130,15 +129,15 @@ println("Solving Krusell-Smith deterministic steady state…")
 @time begin
     while iters < max_iter
         env = (; K, A = 1.0, ks_prices(K, 1.0, p)...)
-        res = solve_steady_state_given_env!(hh, env, buffers; V_init = V, Λ_init = Λ)
+        res = solve_steady_state_given_env!(hh, env; V_init = V, Λ_init = Λ)
         global V, Λ = res.V, res.Λ
 
-        K_supplied = compute_moments(hh, env).K_supplied
+        K_supplied = compute_moments(hh, Λ, env).K_supplied
         global K_err = abs(K_supplied - K) / K
         push!(residual_history, K_err)
         global iters += 1
 
-        @printf "  iter %d: K = %.4f → K_supplied = %.4f, K_err = %.6f, VFI %d / Λ %d\n" iters K K_supplied K_err res.vfi_iters res.lambda_iters
+        @printf "  iter %d: K = %.4f → K_supplied = %.4f, K_err = %.6f, VFI %d / Λ %d\n" iters K K_supplied K_err res.history.vfi_iters res.history.lambda_iters
 
         K_err <= rtol && break
 

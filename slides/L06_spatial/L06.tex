@@ -1033,10 +1033,6 @@ Each variation slots into the chain as a \emph{stage} or a \emph{block-level ext
   \item Local housing $\Rightarrow$ \emph{add an axis} (housing) and a stage.
   \item Skill heterogeneity $\Rightarrow$ \emph{add an axis} (skill) and stage closures keyed on it.
 \end{itemize}
-
-\vspace{0.3em}
-
-\textbf{The Stage abstraction absorbs each one cleanly.} We will not work through them today.
 \end{column}
 \hfill
 \begin{column}{0.46\textwidth}
@@ -1049,115 +1045,8 @@ Each variation slots into the chain as a \emph{stage} or a \emph{block-level ext
   \item 本地住房 $\Rightarrow$ \emph{加一维}（住房）和一个 stage。
   \item 技能异质性 $\Rightarrow$ \emph{加一维}（技能），stage 闭包按其分支。
 \end{itemize}
-
-\vspace{0.3em}
-
-\textbf{Stage 抽象都能干净吸收。}今天不展开。
 \end{column}
 \end{columns}
-\end{frame}
-
-
-% =============================================================
-\section[Wrap]{Wrap / 收尾}
-% =============================================================
-
-\begin{frame}{What we built today \\ 今天搭出了什么}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item A spatial Aiyagari with three locations.
-  \item \texttt{MigrationStage}: Gumbel discrete choice as a stage.
-  \item Preference shifters via cost-matrix column subtraction.
-  \item Indirect inference: calibrating $\alpha$ to match population shares.
-  \item Berry contraction as the calibration step.
-\end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item 一个含三地点的空间 Aiyagari。
-  \item \texttt{MigrationStage}：把 Gumbel 离散选择写成 stage。
-  \item 偏好平移由成本矩阵列减法实现。
-  \item 间接推断：校准 $\alpha$ 匹配人口份额。
-  \item Berry 收缩作为校准步。
-\end{itemize}
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{The key insight \\ 关键洞察}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-The household block is the same generic object as before.
-
-\vspace{0.4em}
-
-\textbf{What changed today:}
-\begin{itemize}
-  \item A new \emph{axis} (location, discrete).
-  \item A new \emph{stage} (MigrationStage, Gumbel).
-  \item A new \emph{outer use}: not equilibrium clearing but \textbf{calibration}.
-\end{itemize}
-
-\vspace{0.4em}
-
-V/$\Lambda$ duality, the chain interface, and the inner solver are unchanged.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-家庭模块和此前一样：通用对象。
-
-\vspace{0.4em}
-
-\textbf{今天变的是：}
-\begin{itemize}
-  \item 新\emph{维}（地点，离散）。
-  \item 新 \emph{stage}（MigrationStage、Gumbel）。
-  \item 新\emph{外层用法}：不是均衡清算，而是\textbf{校准}。
-\end{itemize}
-
-\vspace{0.4em}
-
-V/$\Lambda$ 对偶、链接口、内层求解器都不变。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{Tomorrow: bringing $r$ back inside \\ 明天：把 $r$ 拉回模型内}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-Today $r$ was exogenous --- a small-open-economy shortcut. Tomorrow we close the asset market \textbf{and} add aggregate uncertainty.
-
-\vspace{0.4em}
-
-\textbf{L7: Krusell--Smith.}
-\begin{itemize}
-  \item Aggregate productivity follows a Markov chain.
-  \item Prices depend on the entire wealth distribution $\Lambda$.
-  \item The "state explosion" problem and the K--S workaround.
-\end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-今天 $r$ 是外生的 —— 小型开放经济的捷径。明天我们关闭资产市场\textbf{并}引入总量不确定性。
-
-\vspace{0.4em}
-
-\textbf{第 7 讲：Krusell--Smith。}
-\begin{itemize}
-  \item 总量生产率服从 Markov 链。
-  \item 价格依赖于整个财富分布 $\Lambda$。
-  \item "状态爆炸"问题与 K--S 解法。
-\end{itemize}
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{Open Q\&A \\ 自由问答}
-\begin{center}
-\Huge ?
-\end{center}
 \end{frame}
 
 \end{document}

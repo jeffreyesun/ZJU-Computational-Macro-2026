@@ -8,10 +8,9 @@ using HouseholdStages
         StateAxis(:z, discrete_finite([0.5, 1.5])),
     )
     stage = MarkovStage(layout; axis = :z, transition = P)
-    buffers = allocate(stage, Float64)
-    @test buffers.kernel === nothing
-    @test haskey(buffers.scratch, :perm_in) && haskey(buffers.scratch, :perm_out)
-    @test size(buffers.scratch.perm_in) == size(buffers.scratch.perm_out)
+    @test stage.buffer.kernel === nothing
+    @test haskey(stage.buffer.scratch, :perm_in) && haskey(stage.buffer.scratch, :perm_out)
+    @test size(stage.buffer.scratch.perm_in) == size(stage.buffer.scratch.perm_out)
 end
 
 @testset "allocate — ArgmaxStage kernel exposes policy" begin
@@ -21,9 +20,8 @@ end
         flow_payoff    = (a; cell, env) -> (a == :B ? 1.0 : 0.0),
         next_state_idx = (cell, a) -> a == :A ? 1 : 2,
     )
-    buffers = allocate(stage, Float64)
-    @test buffers.kernel.policy === stage.policy
-    @test buffers.scratch === nothing
+    @test stage.buffer.kernel.policy isa Array{Int}
+    @test stage.buffer.scratch === nothing
 end
 
 @testset "allocate — LogitChoiceStage kernel is a probability tensor" begin
@@ -34,10 +32,9 @@ end
         next_state_idx = (cell, a) -> a,
         ε              = Param(0.5),
     )
-    buffers = allocate(stage, Float64)
-    @test buffers.kernel.choice_prob isa Array
-    @test size(buffers.kernel.choice_prob) == (2, 2)  # (layout dims=(2,), n_actions=2)
-    @test buffers.scratch === nothing
+    @test stage.buffer.kernel.choice_prob isa Array
+    @test size(stage.buffer.kernel.choice_prob) == (2, 2)  # (layout dims=(2,), n_actions=2)
+    @test stage.buffer.scratch === nothing
 end
 
 @testset "allocate — ForgetfulSumStage has no kernel or scratch" begin
@@ -46,9 +43,8 @@ end
         StateAxis(:t, categorical([:a, :b, :c, :d])),
     )
     stage = ForgetfulSumStage(layout; forget_axis = :t)
-    buffers = allocate(stage, Float64)
-    @test buffers.kernel === nothing
-    @test buffers.scratch === nothing
+    @test stage.buffer.kernel === nothing
+    @test stage.buffer.scratch === nothing
 end
 
 @testset "allocate — ChainStage returns per-stage tuple" begin
@@ -56,14 +52,13 @@ end
     layout = StateLayout(StateAxis(:z, discrete_finite([0.5, 1.5])))
     s1 = MarkovStage(layout; axis = :z, transition = P)
     s2 = MarkovStage(layout; axis = :z, transition = P)
-    chain = s1 ∘ₛ s2
-    buffers = allocate(chain, Float64)
-    @test buffers isa Tuple
-    @test length(buffers) == 2
-    @test buffers[1].kernel === nothing
-    @test buffers[2].kernel === nothing
-    @test haskey(buffers[1].scratch, :perm_in)
-    @test haskey(buffers[2].scratch, :perm_in)
+    chain = s1 ∘ s2
+    @test chain.buffer.stages isa Tuple
+    @test length(chain.buffer.stages) == 2
+    @test chain.buffer.stages[1].kernel === nothing
+    @test chain.buffer.stages[2].kernel === nothing
+    @test haskey(chain.buffer.stages[1].scratch, :perm_in)
+    @test haskey(chain.buffer.stages[2].scratch, :perm_in)
 end
 
 @testset "single-stage backward/forward via buffers" begin
@@ -73,12 +68,11 @@ end
         StateAxis(:wealth, continuous_grid([0.0, 1.0, 2.0])),
     )
     stage = MarkovStage(layout; axis = :z, transition = P)
-    buffers = allocate(stage, Float64)
     V_end = ones(2, 3)
-    V_start = backward!(stage, V_end, nothing, buffers)
+    V_start = backward!(stage, V_end, nothing)
     @test all(isapprox.(V_start, 1.0; atol = 1e-12))
 
     Λ_start = rand(2, 3); Λ_start ./= sum(Λ_start)
-    Λ_end = forward!(stage, Λ_start, buffers, nothing)
+    Λ_end = forward!(stage, Λ_start)
     @test isapprox(sum(Λ_end), 1.0; atol = 1e-12)
 end

@@ -4,7 +4,7 @@
 
 # Demonstrates `HouseholdStages.expectation_vectors`, `build_F`, and
 # `J_from_F` at the Aiyagari steady state on the 3-stage household
-# chain `IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage`.
+# chain `IncomeShock ∘ IncomeReceipt ∘ ConsumptionSavingsStage`.
 #
 # `expectation_vectors` iterates the chain's `forward_adjoint!` —
 # i.e., K^T applied to the integrand — to produce the t-step
@@ -36,19 +36,18 @@ function ssj_demo(; T_horizon::Int = 30, p = mit_shock_params,
     verbose && println("Computing pre-shock steady state (A = 1)…")
     ss     = mit_steady_state(p; A = 1.0, verbosity = 0)
     hh     = ss.hh
-    buffers = ss.buffers
     K_ss   = ss.K
     env_ss = (; K = K_ss, r = ss.r, w = ss.w)
     verbose && @printf "  K_ss = %.4f, r = %.4f, w = %.4f\n" K_ss ss.r ss.w
 
     # Re-prime kernels at the SS so the adjoint methods read a
     # consistent K-operator.
-    backward!(hh, ss.V, env_ss, buffers)
-    forward!(hh, ss.Λ, buffers)
+    backward!(hh, ss.V, env_ss)
+    forward!(hh, ss.Λ)
 
     # 2. Expectation vectors for the K_supplied integrand
     verbose && println("\nRunning expectation_vectors over $T_horizon periods…")
-    𝓔 = expectation_vectors(hh, cell -> cell.wealth, T_horizon, buffers)
+    𝓔 = expectation_vectors(hh, cell -> cell.wealth, T_horizon)
     if verbose
         println("  produced $(length(𝓔)) expectation arrays of shape $(size(𝓔[1])).")
         println("  ⟨𝓔[t], Λ_ss⟩ for t = 0..min(5, T_horizon-1):")

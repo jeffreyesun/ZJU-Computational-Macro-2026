@@ -1,18 +1,19 @@
 """
-Logit-smoothed discrete choice over a categorical axis. Actions are the
-levels of `choice_axis`. The K-operator is the stochastic kernel
-`Σ_a π(a|s) δ_{σ(s,a)}` with `π(a|s) = softmax((u_a) / ε)`; the kernel
-stores the probability tensor `P[s..., a]`.
+Configuration for a logit-smoothed discrete-choice stage. Actions are
+the levels of `choice_axis`. The K-operator is the stochastic kernel
+`Σ_a π(a|s) δ_{σ(s,a)}` with `π(a|s) = softmax((u_a) / ε)`; the
+materialised probability tensor lives on the Buffer.
 
 `flow_payoff(cell, action; env)` and `next_state_idx(cell, action) -> Int`
 mirror the [`ArgmaxStage`](@ref) convention. `ε::Param{T}` is the logit
 scale, either a literal or a Symbol-valued sweep key (see [`Param`](@ref)).
 `-Inf` flow payoffs are treated as "unavailable action": skipped in the
 log-sum-exp and assigned zero probability.
+
+Pure data — no per-call buffers.
 """
-struct LogitChoiceStage{F, BF,
-                   LIn<:StateLayout, LOut<:StateLayout,
-                   N, T<:Real, AV<:AbstractArray{T,N}} <: AbstractStage
+struct LogitChoiceStageSpec{F, BF, T<:Real,
+                            LIn<:StateLayout, LOut<:StateLayout} <: AbstractStageSpec
     choice_axis    :: Symbol
     choice_dim     :: Int
     flow_payoff    :: F
@@ -20,50 +21,105 @@ struct LogitChoiceStage{F, BF,
     ε              :: Param{T}
     input_layout   :: LIn
     output_layout  :: LOut
-    V_start        :: AV
-    Λ_end          :: AV
+    element_type   :: Type{T}
 end
 
-"Construct a [`LogitChoiceStage`](@ref) stage on `layout`."
-function LogitChoiceStage(layout::StateLayout;
-                     choice_axis::Symbol,
-                     flow_payoff,
-                     next_state_idx,
-                     ε::Param{T} = Param(1.0),
-                     element_type::Union{Type, Nothing} = nothing,
-                     V_start::Union{Nothing, AbstractArray} = nothing,
-                     Λ_end::Union{Nothing, AbstractArray}  = nothing) where {T<:Real}
+"""
+    LogitChoiceStageSpec(layout; choice_axis, flow_payoff, next_state_idx,
+                         ε=Param(1.0), element_type=nothing)
+
+Build the Spec for a [`LogitChoiceStage`](@ref). `element_type`
+defaults to `eltype(ε)`.
+"""
+function LogitChoiceStageSpec(layout::StateLayout;
+                              choice_axis::Symbol,
+                              flow_payoff,
+                              next_state_idx,
+                              ε::Param{T} = Param(1.0),
+                              element_type::Union{Type, Nothing} = nothing) where {T<:Real}
     Tb = @something element_type T
+    Tb === T ||
+        error("LogitChoiceStageSpec: element_type ($Tb) must match eltype(ε) ($T); " *
+              "use `with_eltype` to switch eltypes instead.")
     choice_dim = axis_position(layout, choice_axis)
-    (; Vs, Λe) = _alloc_VΛ(layout, Tb, V_start, Λ_end)
-    return LogitChoiceStage{typeof(flow_payoff),
-                       typeof(next_state_idx),
-                       typeof(layout), typeof(layout),
-                       ndims(Vs), Tb, typeof(Vs)}(
+    return LogitChoiceStageSpec{typeof(flow_payoff), typeof(next_state_idx),
+                                Tb, typeof(layout), typeof(layout)}(
         choice_axis, choice_dim, flow_payoff, next_state_idx, ε,
-        layout, layout, Vs, Λe,
+        layout, layout, Tb,
     )
 end
 
-static_env_deps(::Type{<:LogitChoiceStage}) = NamedTuple()
+"""
+Per-call buffer for a logit-smoothed discrete-choice stage. The kernel
+is a NamedTuple `(; choice_prob)` holding the per-cell action
+probability tensor of shape `(layout_size..., n_actions)`. No scratch.
+"""
+struct LogitChoiceStageBuffer{T<:Real, N, AV<:AbstractArray{T,N},
+                              Kernel} <: AbstractStageBuffer
+    kernel  :: Kernel
+    scratch :: Nothing
+    V_start :: AV
+    Λ_end   :: AV
+    cache   :: CacheState
+end
 
-function allocate(stage::LogitChoiceStage, ::Type{T2} = eltype(stage.V_start)) where {T2}
-    dims      = layout_size(stage.input_layout)
-    n_actions = axissize(stage.input_layout.axes[stage.choice_dim])
-    prob      = zeros(T2, dims..., n_actions)
-    return (; kernel = (; choice_prob = prob), scratch = nothing)
+"""
+A logit-smoothed discrete-choice stage. Construct via
+`LogitChoiceStage(layout; choice_axis, flow_payoff, next_state_idx, ε)`.
+Composes via `∘` and `×`.
+"""
+struct LogitChoiceStage{Spec<:LogitChoiceStageSpec,
+                        Buffer<:LogitChoiceStageBuffer} <: AbstractStage
+    spec   :: Spec
+    buffer :: Buffer
+end
+
+function LogitChoiceStage(layout::StateLayout;
+                          choice_axis::Symbol,
+                          flow_payoff,
+                          next_state_idx,
+                          ε::Param{T} = Param(1.0),
+                          element_type::Union{Type, Nothing} = nothing,
+                          V_start::Union{Nothing, AbstractArray} = nothing,
+                          Λ_end::Union{Nothing, AbstractArray}  = nothing) where {T<:Real}
+    spec = LogitChoiceStageSpec(layout; choice_axis, flow_payoff, next_state_idx,
+                                ε, element_type)
+    Tb = spec.element_type
+    return LogitChoiceStage(spec, allocate(spec, Tb; V_start, Λ_end))
+end
+
+LogitChoiceStage(spec::LogitChoiceStageSpec) = LogitChoiceStage(spec, allocate(spec))
+bundle(spec::LogitChoiceStageSpec)           = LogitChoiceStage(spec)
+
+static_env_deps(::Type{<:LogitChoiceStageSpec}) = NamedTuple()
+
+# Allocate #
+#----------#
+
+function allocate(spec::LogitChoiceStageSpec, ::Type{T} = spec.element_type;
+                  V_start::Union{Nothing, AbstractArray} = nothing,
+                  Λ_end::Union{Nothing, AbstractArray}   = nothing) where {T}
+    (; Vs, Λe) = _alloc_VΛ(spec.input_layout, T, V_start, Λ_end)
+    dims      = layout_size(spec.input_layout)
+    n_actions = axissize(spec.input_layout.axes[spec.choice_dim])
+    choice_prob = zeros(T, dims..., n_actions)
+    kernel = (; choice_prob)
+    return LogitChoiceStageBuffer{T, ndims(Vs), typeof(Vs), typeof(kernel)}(
+        kernel, nothing, Vs, Λe, CacheState(),
+    )
 end
 
 # Backward #
 #----------#
 
-function backward!(stage::LogitChoiceStage, V_end, env, buffers)
-    (; kernel, scratch) = buffers
-    (; input_layout, choice_dim, V_start) = stage
-    ε       = resolve(stage.ε, env)
+function backward!(spec::LogitChoiceStageSpec, V_end, env,
+                   buffer::LogitChoiceStageBuffer)
+    (; input_layout, choice_dim) = spec
+    V_start = buffer.V_start
+    prob    = buffer.kernel.choice_prob
+    ε       = resolve(spec.ε, env)
     actions = axisvalues(input_layout.axes[choice_dim])
     n_a     = length(actions)
-    prob    = kernel.choice_prob
     T       = eltype(V_start)
 
     for (idx, cell) in cells(input_layout)
@@ -74,10 +130,10 @@ function backward!(stage::LogitChoiceStage, V_end, env, buffers)
         any_fin = false
         # Pass 1: max_u for numerical stability.
         for action in actions
-            r = stage.flow_payoff(cell, action; env = env)
+            r = spec.flow_payoff(cell, action; env = env)
             if isfinite(r)
                 any_fin = true
-                next_axis_i = stage.next_state_idx(cell, action)
+                next_axis_i = spec.next_state_idx(cell, action)
                 out_idxs = Base.setindex(in_idxs, next_axis_i, choice_dim)
                 u = r + V_end[CartesianIndex(out_idxs)]
                 if u > max_u
@@ -90,9 +146,9 @@ function backward!(stage::LogitChoiceStage, V_end, env, buffers)
         # Pass 2: weights / unnormalised probs.
         denom = zero(T)
         for (a_i, action) in pairs(actions)
-            r = stage.flow_payoff(cell, action; env = env)
+            r = spec.flow_payoff(cell, action; env = env)
             if isfinite(r)
-                next_axis_i = stage.next_state_idx(cell, action)
+                next_axis_i = spec.next_state_idx(cell, action)
                 out_idxs    = Base.setindex(in_idxs, next_axis_i, choice_dim)
                 u           = r + V_end[CartesianIndex(out_idxs)]
                 w           = exp((u - max_u) / ε)
@@ -108,18 +164,20 @@ function backward!(stage::LogitChoiceStage, V_end, env, buffers)
         end
         V_start[ci_in] = max_u + ε * log(denom)
     end
+    _seat_cache!(buffer, V_end, env)
     return V_start
 end
 
 # Forward #
 #---------#
 
-function forward!(stage::LogitChoiceStage, Λ_start, buffers, moments = nothing)
-    (; kernel, scratch) = buffers
-    (; input_layout, choice_dim, Λ_end) = stage
+function forward!(spec::LogitChoiceStageSpec, Λ_start,
+                  buffer::LogitChoiceStageBuffer)
+    (; input_layout, choice_dim) = spec
+    Λ_end = buffer.Λ_end
+    prob  = buffer.kernel.choice_prob
     actions = axisvalues(input_layout.axes[choice_dim])
-    prob    = kernel.choice_prob
-    T       = eltype(Λ_end)
+    T = eltype(Λ_end)
 
     fill!(Λ_end, zero(T))
     for (idx, cell) in cells(input_layout)
@@ -131,7 +189,7 @@ function forward!(stage::LogitChoiceStage, Λ_start, buffers, moments = nothing)
         for (a_i, action) in pairs(actions)
             p = prob[in_idxs..., a_i]
             iszero(p) && continue
-            next_axis_i = stage.next_state_idx(cell, action)
+            next_axis_i = spec.next_state_idx(cell, action)
             out_idxs    = Base.setindex(in_idxs, next_axis_i, choice_dim)
             Λ_end[CartesianIndex(out_idxs)] += mass * p
         end

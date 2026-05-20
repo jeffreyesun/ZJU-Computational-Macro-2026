@@ -59,12 +59,10 @@ end
     V_end = [0.1 * w_i + 0.05 * y_j for w_i in 1:n_w, y_j in 1:3]
     env   = NamedTuple()
 
-    buf_seq = allocate(seq)
-    buf_dc  = allocate(dc)
-    V_seq = copy(backward!(seq, V_end, env, buf_seq))
-    V_dc  = copy(backward!(dc,  V_end, env, buf_dc))
+    V_seq = copy(backward!(seq, V_end, env))
+    V_dc  = copy(backward!(dc,  V_end, env))
 
-    @test seq.policy == dc.policy
+    @test seq.buffer.kernel.policy == dc.buffer.kernel.policy
     @test V_seq ≈ V_dc atol = 1e-12
 end
 

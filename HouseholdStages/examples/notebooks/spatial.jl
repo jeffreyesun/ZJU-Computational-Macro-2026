@@ -7,7 +7,7 @@
 # Aiyagari chain and a dedicated `MigrationStage` between the income
 # shock and the L03/L04 savings decomposition:
 #
-#     IncomeShock ∘ₛ MigrationStage ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage
+#     IncomeShock ∘ MigrationStage ∘ IncomeReceipt ∘ ConsumptionSavingsStage
 #
 # Each location's capital market clears independently — no inter-
 # location trade. Outer loop: damped tatonnement on
@@ -82,7 +82,7 @@ function spatial_household(p::SpatialParams)
         monotone_search = :divide_conquer,
     )
 
-    return lift_moments(shock ∘ₛ migration ∘ₛ receipt ∘ₛ savings;
+    return define_moments!(shock ∘ migration ∘ receipt ∘ savings;
         K_home     = at_end(integrand = (cell; env) -> cell.location == :home   ? cell.wealth : 0.0,
                             reduce = sum),
         K_abroad   = at_end(integrand = (cell; env) -> cell.location == :abroad ? cell.wealth : 0.0,
@@ -109,12 +109,11 @@ p    = SpatialParams()
 @printf "Migration: ε_logit = %.2f, migration_cost = %.2f\n" p.ε_logit p.migration_cost
 
 
-# 2. Household Stage Chain and Workspace #
-#----------------------------------------#
+# 2. Household Stage Chain #
+#--------------------------#
 
-hh      = spatial_household(p)
-buffers = allocate(hh)
-dims    = layout_size(first(hh.stages).input_layout)
+hh   = spatial_household(p)
+dims = layout_size(first(hh.spec.stages).input_layout)
 
 @printf "Layout: wealth %d × income %d × location %d = %d cells\n" dims[1] dims[2] dims[3] prod(dims)
 
@@ -128,13 +127,13 @@ pr_trial = spatial_prices(K_home_trial, K_abroad_trial, p)
 env_trial = (; K_home = K_home_trial, K_abroad = K_abroad_trial,
                pr_trial.r_home, pr_trial.w_home,
                pr_trial.r_abroad, pr_trial.w_abroad)
-(; V, Λ, vfi_iters, lambda_iters) =
-    solve_steady_state_given_env!(hh, env_trial, buffers)
-m_trial = compute_moments(hh, env_trial)
+res_trial = solve_steady_state_given_env!(hh, env_trial)
+V, Λ      = res_trial.V, res_trial.Λ
+m_trial   = compute_moments(hh, Λ, env_trial)
 
 @printf "(K_h, K_a)_trial = (%.4f, %.4f) → (Ks_h, Ks_a) = (%.4f, %.4f)\n" K_home_trial K_abroad_trial m_trial.K_home m_trial.K_abroad
 @printf "  residuals = (%+.4f, %+.4f); pop_home = %.4f, pop_abroad = %.4f\n" (m_trial.K_home - K_home_trial) (m_trial.K_abroad - K_abroad_trial) m_trial.pop_home m_trial.pop_abroad
-@printf "  VFI: %d iters; Λ: %d iters; r_h / r_a = %.4f / %.4f\n" vfi_iters lambda_iters env_trial.r_home env_trial.r_abroad
+@printf "  VFI: %d iters; Λ: %d iters; r_h / r_a = %.4f / %.4f\n" res_trial.history.vfi_iters res_trial.history.lambda_iters env_trial.r_home env_trial.r_abroad
 
 
 # 4. Outer Damped Tatonnement #
@@ -156,9 +155,9 @@ println("Solving spatial two-location steady state…")
     while iters < maxiter
         pr  = spatial_prices(K_home, K_abroad, p)
         env = (; K_home, K_abroad, pr.r_home, pr.w_home, pr.r_abroad, pr.w_abroad)
-        res = solve_steady_state_given_env!(hh, env, buffers; V_init = V, Λ_init = Λ)
+        res = solve_steady_state_given_env!(hh, env; V_init = V, Λ_init = Λ)
         global V, Λ = res.V, res.Λ
-        global moments_last = compute_moments(hh, env)
+        global moments_last = compute_moments(hh, Λ, env)
 
         res_h = moments_last.K_home   - K_home
         res_a = moments_last.K_abroad - K_abroad

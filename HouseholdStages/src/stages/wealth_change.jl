@@ -1,17 +1,17 @@
 """
-A deterministic wealth-change stage. Each cell's wealth transitions
-according to the user closure `wealth_post(cell; env) -> Real`. The
-K-operator is "look up the value at `wealth_post(cell; env)` along the
-wealth axis": backward uses linear interpolation on `V_end`, forward
-uses share-based mass redistribution. Kernel = the materialised
-`wealth_post` value per cell.
+Configuration for a deterministic wealth-change stage. Each cell's
+wealth transitions according to the user closure
+`wealth_post(cell; env) -> Real`. The K-operator is "look up the value
+at `wealth_post(cell; env)` along the wealth axis": backward uses
+linear interpolation on `V_end`, forward uses share-based mass
+redistribution. Pure data — no per-call buffers.
 
 Other state axes pass through unchanged. The `:wealth` axis is
 expected to be a [`ContinuousGrid`](@ref); other axes can be of any
 kind.
 
 Two extrapolation policies are wired up via the `extrap` kwarg for the
-backward V-interpolation:
+backward V-interpolation, encoded as a `Val`-typed type parameter:
 
   * `:linear` — extend the leftmost slope into the underflow region.
   * `:clip`   — snap underflow to `V_end[1, ...]`.
@@ -26,57 +26,97 @@ accumulates in `wgrid[1]`, mass landing past `wgrid[end]` accumulates in
 `env` is passed plainly to the user closure (no `Ref` wrapper); access
 `env.r`, `env.w` etc. directly.
 """
-struct WealthChangeStage{F, T<:Real, N, L<:StateLayout,
-                    AV<:AbstractArray{T,N}, Extrap} <: AbstractStage
+struct WealthChangeStageSpec{F, T<:Real, L<:StateLayout, Extrap} <: AbstractStageSpec
     wealth_post   :: F
     wealth_axis   :: Symbol
     wealth_dim    :: Int
     input_layout  :: L
     output_layout :: L
-    V_start       :: AV
-    Λ_end         :: AV
+    element_type  :: Type{T}
 end
 
 """
-    WealthChangeStage(layout; wealth_post, wealth_axis=:wealth,
-                          extrap=:linear, element_type=Float64) -> WealthChangeStage
+    WealthChangeStageSpec(layout; wealth_post, wealth_axis=:wealth,
+                          extrap=:linear, element_type=Float64)
 
-Build a [`WealthChangeStage`](@ref). `wealth_post(cell; env)` returns
-the post-stage wealth value. `extrap` is `:linear` / `:clip` / `-Inf`.
+Build the Spec for a [`WealthChangeStage`](@ref). `extrap` is
+`:linear` / `:clip` / `-Inf`.
 """
-function WealthChangeStage(layout::StateLayout;
-                      wealth_post,
-                      wealth_axis::Symbol = :wealth,
-                      extrap = :linear,
-                      element_type::Type{T} = Float64,
-                      V_start::Union{Nothing, AbstractArray} = nothing,
-                      Λ_end::Union{Nothing, AbstractArray}  = nothing) where {T<:Real}
+function WealthChangeStageSpec(layout::StateLayout;
+                               wealth_post,
+                               wealth_axis::Symbol = :wealth,
+                               extrap = :linear,
+                               element_type::Type{T} = Float64) where {T<:Real}
     extrap in (:linear, :clip, -Inf) ||
-        error("WealthChangeStage: extrap must be :linear, :clip, or -Inf; got $extrap")
+        error("WealthChangeStageSpec: extrap must be :linear, :clip, or -Inf; got $extrap")
     wealth_dim = axis_position(layout, wealth_axis)
-    (; Vs, Λe) = _alloc_VΛ(layout, T, V_start, Λ_end)
-    return WealthChangeStage{typeof(wealth_post), T, ndims(Vs), typeof(layout),
-                        typeof(Vs), Val(extrap) |> typeof}(
-        wealth_post, wealth_axis, wealth_dim,
-        layout, layout, Vs, Λe,
+    return WealthChangeStageSpec{typeof(wealth_post), T, typeof(layout),
+                                 Val(extrap) |> typeof}(
+        wealth_post, wealth_axis, wealth_dim, layout, layout, element_type,
     )
 end
 
-static_env_deps(::Type{<:WealthChangeStage}) = NamedTuple()
+"""
+Per-call buffer for a wealth-change stage. The kernel is a NamedTuple
+`(; wealth_post)` holding the materialised per-cell post-wealth array.
+Scratch is `(; cells)`: the memoised `cell_array(layout)` so the
+per-backward closure broadcast doesn't reallocate.
+"""
+struct WealthChangeStageBuffer{T<:Real, N, AV<:AbstractArray{T,N},
+                               Kernel, Scratch} <: AbstractStageBuffer
+    kernel  :: Kernel
+    scratch :: Scratch
+    V_start :: AV
+    Λ_end   :: AV
+    cache   :: CacheState
+end
 
+"""
+A deterministic wealth-change stage. Construct via
+`WealthChangeStage(layout; wealth_post, wealth_axis=:wealth,
+extrap=:linear)`. Composes via `∘` and `×`. The `Extrap` policy is
+carried as a `Val`-typed type parameter on the Spec for type-stable
+dispatch in the backward interpolation.
+"""
+struct WealthChangeStage{Spec<:WealthChangeStageSpec,
+                         Buffer<:WealthChangeStageBuffer} <: AbstractStage
+    spec   :: Spec
+    buffer :: Buffer
+end
+
+function WealthChangeStage(layout::StateLayout;
+                           wealth_post,
+                           wealth_axis::Symbol = :wealth,
+                           extrap = :linear,
+                           element_type::Type{T} = Float64,
+                           V_start::Union{Nothing, AbstractArray} = nothing,
+                           Λ_end::Union{Nothing, AbstractArray}  = nothing) where {T<:Real}
+    spec = WealthChangeStageSpec(layout; wealth_post, wealth_axis, extrap, element_type)
+    return WealthChangeStage(spec, allocate(spec, T; V_start, Λ_end))
+end
+
+WealthChangeStage(spec::WealthChangeStageSpec) = WealthChangeStage(spec, allocate(spec))
+bundle(spec::WealthChangeStageSpec)            = WealthChangeStage(spec)
+
+static_env_deps(::Type{<:WealthChangeStageSpec}) = NamedTuple()
+
+# Allocate #
+#----------#
 # Kernel holds the materialised `wealth_post` array (same shape as the
-# state layout). Scratch is the wgrid array reshaped along the wealth
-# dim (so reinterpolate_arr! / convert_distribution_arr! can read it
-# along their leading dim).
-function allocate(stage::WealthChangeStage, ::Type{T2} = eltype(stage.V_start)) where {T2}
-    dims        = layout_size(stage.input_layout)
-    wealth_post = zeros(T2, dims)
-    # Materialize the cell array once at workspace-allocation time. The
-    # layout is a struct field and never changes, so the cells are
-    # safe to cache for the lifetime of the workspace. This eliminates
-    # the per-backward `cell_array(layout)` allocation in `_fill_wealth_post!`.
-    cells = cell_array(stage.input_layout)
-    return (; kernel = (; wealth_post), scratch = (; cells))
+# state layout). Scratch holds the memoised `cell_array(layout)` so the
+# closure broadcast doesn't reallocate every backward pass.
+function allocate(spec::WealthChangeStageSpec, ::Type{T} = spec.element_type;
+                  V_start::Union{Nothing, AbstractArray} = nothing,
+                  Λ_end::Union{Nothing, AbstractArray}   = nothing) where {T}
+    (; Vs, Λe) = _alloc_VΛ(spec.input_layout, T, V_start, Λ_end)
+    dims        = layout_size(spec.input_layout)
+    wealth_post = zeros(T, dims)
+    kernel      = (; wealth_post)
+    cells       = cell_array(spec.input_layout)
+    scratch     = (; cells)
+    return WealthChangeStageBuffer{T, ndims(Vs), typeof(Vs), typeof(kernel), typeof(scratch)}(
+        kernel, scratch, Vs, Λe, CacheState(),
+    )
 end
 
 # Backward #
@@ -84,21 +124,21 @@ end
 # V_pre(cell) = V_post evaluated at wealth_post(cell; env), interpolated
 # along the wealth axis using the chosen extrap policy.
 
-function backward!(stage::WealthChangeStage{F,T,N,L,AV,Extrap},
-                   V_end, env, buffers) where {F,T,N,L,AV,Extrap}
-    (; kernel, scratch) = buffers
-    (; input_layout, wealth_dim, V_start) = stage
-    wgrid = axisvalues(input_layout.axes[wealth_dim])
+function backward!(spec::WealthChangeStageSpec{F,T,L,Extrap},
+                   V_end, env, buffer::WealthChangeStageBuffer) where {F,T,L,Extrap}
+    (; kernel, scratch, V_start) = buffer
+    wgrid = axisvalues(spec.input_layout.axes[spec.wealth_dim])
     wpost = kernel.wealth_post
 
     # Evaluate the post-stage wealth at every cell. The kwarg `env` is
     # captured (not broadcast), so the closure sees env unwrapped.
-    wpost .= stage.wealth_post.(scratch.cells; env)
+    wpost .= spec.wealth_post.(scratch.cells; env)
 
     # V_end lives on wgrid; we want V_start at the per-cell query points wpost.
     extrap_val = _extrap_value(Extrap)
-    _along_wealth(V_start, V_end, wgrid, wpost, wealth_dim,
+    _along_wealth(V_start, V_end, wgrid, wpost, spec.wealth_dim,
                   (y2, y1, x1, x2) -> reinterpolate!(y2, y1, x1, x2, extrap_val))
+    _seat_cache!(buffer, V_end, env)
     return V_start
 end
 
@@ -107,13 +147,12 @@ end
 # Λ_post on wgrid = convert_distribution(Λ_pre with source positions
 # wpost → wgrid), via share-based redistribution.
 
-function forward!(stage::WealthChangeStage, Λ_start, buffers, moments = nothing)
-    (; kernel, scratch) = buffers
-    (; input_layout, wealth_dim, Λ_end) = stage
-    wgrid = axisvalues(input_layout.axes[wealth_dim])
+function forward!(spec::WealthChangeStageSpec, Λ_start, buffer::WealthChangeStageBuffer)
+    (; kernel, Λ_end) = buffer
+    wgrid = axisvalues(spec.input_layout.axes[spec.wealth_dim])
     wpost = kernel.wealth_post
     # Λ_start has source positions wpost (per cell); Λ_end lives on wgrid.
-    _along_wealth(Λ_end, Λ_start, wpost, wgrid, wealth_dim,
+    _along_wealth(Λ_end, Λ_start, wpost, wgrid, spec.wealth_dim,
                   (y2, y1, x1, x2) -> convert_distribution!(y2, y1, x1, x2, Val(:share)))
     return Λ_end
 end
@@ -174,7 +213,7 @@ function _slice_x_along_wealth(x::AbstractArray, other_ci::CartesianIndex,
     return ndims(x) == 1 ? x : view(x, :, other_ci.I[2:end]...)
 end
 
-# Type-stable extrap value lookup from the stage's type parameter.
+# Type-stable extrap value lookup from the spec's type parameter.
 @inline _extrap_value(::Type{Val{:linear}}) = Val(:linear)
 @inline _extrap_value(::Type{Val{:clip}})   = Val(:clip)
 @inline _extrap_value(::Type{Val{-Inf}})    = Val(-Inf)

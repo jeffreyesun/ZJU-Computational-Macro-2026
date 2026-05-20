@@ -12,8 +12,7 @@ using ForwardDiff: ForwardDiff, Dual
 
     V_end = zeros(3, 2)
     env = (bonus = 10.0,)
-    buffers = allocate(stage)
-    V_start = backward!(stage, V_end, env, buffers)
+    V_start = backward!(stage, V_end, env)
 
     # u(s) = cell.wealth + 10 (since V_end = 0).
     @test V_start[1, 1] ≈ 10.0     # wealth = 0
@@ -27,9 +26,8 @@ end
     u = (cell; env) -> Float64(cell.z)
     stage = UtilityStage(layout; utility = u)
 
-    buffers = allocate(stage)
     V_end = [10.0, 20.0, 30.0]
-    V_start = backward!(stage, V_end, NamedTuple(), buffers)
+    V_start = backward!(stage, V_end, NamedTuple())
     @test V_start ≈ [11.0, 22.0, 33.0]
 end
 
@@ -41,9 +39,8 @@ end
     u = (cell; env) -> 1.0   # any utility; forward shouldn't read it
     stage = UtilityStage(layout; utility = u)
 
-    buffers = allocate(stage)
     Λ_start = rand(3, 2); Λ_start ./= sum(Λ_start)
-    Λ_end = forward!(stage, Λ_start, buffers)
+    Λ_end = forward!(stage, Λ_start)
     @test Λ_end == Λ_start
     @test Λ_end !== Λ_start    # written into the stage's buffer
 end
@@ -58,12 +55,11 @@ end
     u = (cell; env) -> log1p(cell.wealth) * cell.income
     stage = UtilityStage(layout; utility = u)
 
-    buffers = allocate(stage)
     V_out = randn(4, 3)
     Λ_in  = rand(4, 3); Λ_in ./= sum(Λ_in)
 
-    V_in  = copy(backward!(stage, V_out, NamedTuple(), buffers))
-    Λ_out = copy(forward!(stage,  Λ_in, buffers))
+    V_in  = copy(backward!(stage, V_out, NamedTuple()))
+    Λ_out = copy(forward!(stage,  Λ_in))
 
     r = V_in .- V_out
     @test isapprox(sum(V_in .* Λ_in),
@@ -87,9 +83,8 @@ end
     markov = MarkovStage(layout; axis = :z, transition = P)
     util   = UtilityStage(layout; utility = (cell; env) -> cell.z)
 
-    chain = markov ∘ₛ util
-    buffers = allocate(chain, Float64)
-    V_start = backward!(chain, zeros(2), NamedTuple(), buffers)
+    chain = markov ∘ util
+    V_start = backward!(chain, zeros(2), NamedTuple())
 
     @test V_start ≈ P * [0.5, 1.5]   # = [0.8, 1.2]
 end
@@ -101,16 +96,15 @@ end
 
     DualT = ForwardDiff.Dual{Nothing, Float64, 1}
     stage_dual = with_eltype(stage, DualT)
-    @test eltype(stage_dual.V_start) <: ForwardDiff.Dual
-    @test eltype(stage_dual.Λ_end)   <: ForwardDiff.Dual
+    @test eltype(stage_dual.buffer.V_start) <: ForwardDiff.Dual
+    @test eltype(stage_dual.buffer.Λ_end)   <: ForwardDiff.Dual
 
-    buffers = allocate(stage_dual, DualT)
     V_end_dual = zeros(DualT, 3)
     env_dual   = (a = DualT(2.0, ForwardDiff.Partials((1.0,))),)
-    V_start    = backward!(stage_dual, V_end_dual, env_dual, buffers)
+    V_start    = backward!(stage_dual, V_end_dual, env_dual)
     @test [ForwardDiff.partials(V_start[i], 1) for i in 1:3] == [1.0, 2.0, 3.0]
 end
 
 @testset "UtilityStage — static_env_deps" begin
-    @test static_env_deps(UtilityStage) === NamedTuple()
+    @test static_env_deps(HouseholdStages.UtilityStageSpec) === NamedTuple()
 end

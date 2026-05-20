@@ -1,69 +1,110 @@
 """
-Hard discrete choice over a categorical axis. Actions are the levels of
-`choice_axis`. The K-operator is a sparse permutation (`δ_{π(s)}` for
-each input cell, where `π(s)` is the chosen-action's next-cell index);
-the kernel stores the integer policy.
+Configuration for a hard discrete-choice stage. Actions are the levels
+of `choice_axis`. The K-operator is a sparse permutation (`δ_{π(s)}`
+for each input cell, where `π(s)` is the chosen-action's next-cell
+index); the materialised integer policy lives on the Buffer.
 
 `flow_payoff(cell, action; env)` is the period payoff at the cell of
 taking action `action`; `-Inf` is treated as "unavailable" and skipped.
 `next_state_idx(cell, action) -> Int` returns the integer index along
 `choice_axis` of the cell reached by `action`.
+
+Pure data — no per-call buffers.
 """
-struct ArgmaxStage{F, BF,
-              LIn<:StateLayout, LOut<:StateLayout,
-              N, T<:Real, AV<:AbstractArray{T,N}} <: AbstractStage
+struct ArgmaxStageSpec{F, BF, T<:Real,
+                       LIn<:StateLayout, LOut<:StateLayout} <: AbstractStageSpec
     choice_axis    :: Symbol
     choice_dim     :: Int
     flow_payoff    :: F
     next_state_idx :: BF
     input_layout   :: LIn
     output_layout  :: LOut
-    V_start        :: AV
-    Λ_end          :: AV
-    policy         :: Array{Int, N}
+    element_type   :: Type{T}
 end
 
 """
-    ArgmaxStage(layout; choice_axis, flow_payoff, next_state_idx,
-                  element_type=Float64) -> ArgmaxStage
+    ArgmaxStageSpec(layout; choice_axis, flow_payoff, next_state_idx,
+                    element_type=Float64)
 
-Construct an [`ArgmaxStage`](@ref) stage. `flow_payoff(cell, action; env)`
-and `next_state_idx(cell, action)` are user closures (see the struct
-docstring).
+Build the Spec for an [`ArgmaxStage`](@ref).
 """
-function ArgmaxStage(layout::StateLayout;
-                choice_axis::Symbol,
-                flow_payoff,
-                next_state_idx,
-                element_type::Type{T} = Float64,
-                V_start::Union{Nothing, AbstractArray} = nothing,
-                Λ_end::Union{Nothing, AbstractArray}  = nothing) where {T<:Real}
+function ArgmaxStageSpec(layout::StateLayout;
+                         choice_axis::Symbol,
+                         flow_payoff,
+                         next_state_idx,
+                         element_type::Type{T} = Float64) where {T<:Real}
     choice_dim = axis_position(layout, choice_axis)
-    (; Vs, Λe) = _alloc_VΛ(layout, T, V_start, Λ_end)
-    N          = ndims(Vs)
-    policy     = zeros(Int, size(Vs))
-    return ArgmaxStage{typeof(flow_payoff),
-                  typeof(next_state_idx),
-                  typeof(layout), typeof(layout),
-                  N, T, typeof(Vs)}(
+    return ArgmaxStageSpec{typeof(flow_payoff), typeof(next_state_idx),
+                           T, typeof(layout), typeof(layout)}(
         choice_axis, choice_dim, flow_payoff, next_state_idx,
-        layout, layout, Vs, Λe, policy,
+        layout, layout, element_type,
     )
 end
 
-static_env_deps(::Type{<:ArgmaxStage}) = NamedTuple()
+"""
+Per-call buffer for a hard discrete-choice stage. The kernel is a
+NamedTuple `(; policy)` holding the materialised integer policy array
+(one chosen action index per cell). No scratch.
+"""
+struct ArgmaxStageBuffer{T<:Real, N, AV<:AbstractArray{T,N},
+                         Kernel} <: AbstractStageBuffer
+    kernel  :: Kernel
+    scratch :: Nothing
+    V_start :: AV
+    Λ_end   :: AV
+    cache   :: CacheState
+end
 
-allocate(stage::ArgmaxStage, ::Type = Float64) =
-    (; kernel = (; policy = stage.policy), scratch = nothing)
+"""
+A hard discrete-choice stage. Construct via
+`ArgmaxStage(layout; choice_axis, flow_payoff, next_state_idx)`.
+Composes via `∘` and `×`.
+"""
+struct ArgmaxStage{Spec<:ArgmaxStageSpec,
+                   Buffer<:ArgmaxStageBuffer} <: AbstractStage
+    spec   :: Spec
+    buffer :: Buffer
+end
+
+function ArgmaxStage(layout::StateLayout;
+                     choice_axis::Symbol,
+                     flow_payoff,
+                     next_state_idx,
+                     element_type::Type{T} = Float64,
+                     V_start::Union{Nothing, AbstractArray} = nothing,
+                     Λ_end::Union{Nothing, AbstractArray}  = nothing) where {T<:Real}
+    spec = ArgmaxStageSpec(layout; choice_axis, flow_payoff, next_state_idx, element_type)
+    return ArgmaxStage(spec, allocate(spec, T; V_start, Λ_end))
+end
+
+ArgmaxStage(spec::ArgmaxStageSpec) = ArgmaxStage(spec, allocate(spec))
+bundle(spec::ArgmaxStageSpec)      = ArgmaxStage(spec)
+
+static_env_deps(::Type{<:ArgmaxStageSpec}) = NamedTuple()
+
+# Allocate #
+#----------#
+
+function allocate(spec::ArgmaxStageSpec, ::Type{T} = spec.element_type;
+                  V_start::Union{Nothing, AbstractArray} = nothing,
+                  Λ_end::Union{Nothing, AbstractArray}   = nothing) where {T}
+    (; Vs, Λe) = _alloc_VΛ(spec.input_layout, T, V_start, Λ_end)
+    policy = zeros(Int, size(Vs))
+    kernel = (; policy)
+    return ArgmaxStageBuffer{T, ndims(Vs), typeof(Vs), typeof(kernel)}(
+        kernel, nothing, Vs, Λe, CacheState(),
+    )
+end
 
 # Backward #
 #----------#
 
-function backward!(stage::ArgmaxStage, V_end, env, buffers)
-    (; kernel, scratch) = buffers
-    (; input_layout, choice_dim, V_start, policy) = stage
+function backward!(spec::ArgmaxStageSpec, V_end, env, buffer::ArgmaxStageBuffer)
+    (; input_layout, choice_dim) = spec
+    V_start = buffer.V_start
+    policy  = buffer.kernel.policy
     actions = axisvalues(input_layout.axes[choice_dim])
-    T = eltype(V_start)
+    T       = eltype(V_start)
 
     for (idx, cell) in cells(input_layout)
         in_idxs = Tuple(idx)
@@ -72,9 +113,9 @@ function backward!(stage::ArgmaxStage, V_end, env, buffers)
         best_v   = typemin(T)
         best_a_i = 0
         for (a_i, action) in pairs(actions)
-            r = stage.flow_payoff(cell, action; env = env)
+            r = spec.flow_payoff(cell, action; env = env)
             isfinite(r) || continue
-            next_axis_i = stage.next_state_idx(cell, action)
+            next_axis_i = spec.next_state_idx(cell, action)
             out_idxs    = Base.setindex(in_idxs, next_axis_i, choice_dim)
             v = r + V_end[CartesianIndex(out_idxs)]
             if v > best_v
@@ -87,15 +128,17 @@ function backward!(stage::ArgmaxStage, V_end, env, buffers)
         V_start[ci_in] = best_v
         policy[ci_in]  = best_a_i
     end
+    _seat_cache!(buffer, V_end, env)
     return V_start
 end
 
 # Forward #
 #---------#
 
-function forward!(stage::ArgmaxStage, Λ_start, buffers, moments = nothing)
-    (; kernel, scratch) = buffers
-    (; input_layout, choice_dim, Λ_end, policy) = stage
+function forward!(spec::ArgmaxStageSpec, Λ_start, buffer::ArgmaxStageBuffer)
+    (; input_layout, choice_dim) = spec
+    Λ_end  = buffer.Λ_end
+    policy = buffer.kernel.policy
     actions = axisvalues(input_layout.axes[choice_dim])
     T = eltype(Λ_end)
 
@@ -107,7 +150,7 @@ function forward!(stage::ArgmaxStage, Λ_start, buffers, moments = nothing)
         iszero(mass) && continue
 
         chosen_action = actions[policy[ci_in]]
-        next_axis_i   = stage.next_state_idx(cell, chosen_action)
+        next_axis_i   = spec.next_state_idx(cell, chosen_action)
         out_idxs      = Base.setindex(in_idxs, next_axis_i, choice_dim)
         Λ_end[CartesianIndex(out_idxs)] += mass
     end

@@ -6,7 +6,7 @@
 # specialised to the K-S employed/unemployed income process. The
 # household problem decomposes into three stages, in time order:
 #
-#     IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage
+#     IncomeShock ∘ IncomeReceipt ∘ ConsumptionSavingsStage
 #
 # `IncomeShock` resolves the two-state Markov draw on the income axis
 # (employed `y = 1`, unemployed `y = 0.07` — the canonical K-S
@@ -90,8 +90,8 @@ end
 #--------------------------#
 
 """
-Build the moment-lifted K-S household chain
-`IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage`.
+Build the moment-attached K-S household chain
+`IncomeShock ∘ IncomeReceipt ∘ ConsumptionSavingsStage`.
 """
 function ks_household(p = ks_params)
     layout = StateLayout(
@@ -112,7 +112,8 @@ function ks_household(p = ks_params)
         monotone_search = :divide_conquer,
     )
 
-    return lift_moments(shock ∘ₛ receipt ∘ₛ savings;
+    hh = shock ∘ receipt ∘ savings
+    return define_moments!(hh;
         K_supplied = at_end(integrand = :wealth, reduce = sum),
     )
 end

@@ -8,10 +8,11 @@
 # `aiyagari_prices` during the transition. The walkthrough goes:
 #
 #   1. Parameters + state layout.
-#   2. Household chain and workspace.
+#   2. Household chain.
 #   3. Pre-shock steady state at A = 1.
 #   4. Post-shock steady state at A = A_0 (the new long-run).
-#   5. MIT-shock transition (rolled here, period-by-period).
+#   5. MIT-shock transition (uses the library
+#      `solve_transition_given_env_path!` helper).
 #   6. Sequence-space Jacobian sketch.
 
 using HouseholdStages
@@ -59,7 +60,7 @@ function aiyagari_household(p::MITShockParams)
         wealth_axis     = :wealth,
         monotone_search = :divide_conquer,
     )
-    return lift_moments(shock ∘ₛ receipt ∘ₛ savings;
+    return define_moments!(shock ∘ receipt ∘ savings;
         K_supplied = at_end(integrand = :wealth, reduce = sum),
     )
 end
@@ -78,12 +79,11 @@ p = MITShockParams()
 @printf "Calibration: β = %.3f, σ = %.2f, α = %.2f, δ = %.2f\n" p.β p.σ p.α p.δ
 
 
-# 2. Household Stage Chain and Workspace #
-#----------------------------------------#
+# 2. Household Stage Chain #
+#--------------------------#
 
-hh      = aiyagari_household(p)
-buffers = allocate(hh)
-dims    = layout_size(first(hh.stages).input_layout)
+hh   = aiyagari_household(p)
+dims = layout_size(first(hh.spec.stages).input_layout)
 
 @printf "Layout: wealth %d × income %d = %d cells\n" dims[1] dims[2] prod(dims)
 
@@ -96,7 +96,7 @@ dims    = layout_size(first(hh.stages).input_layout)
 # (V backward to fixed point + Λ forward to stationarity); the outer
 # loop is rolled here.
 
-function solve_ss(hh, buffers, p; A::Float64, K_init::Float64,
+function solve_ss(hh, p; A::Float64, K_init::Float64,
                   update_speed = 0.05, rtol = 2e-2, max_iter = 500)
     K     = K_init
     V, Λ  = nothing, nothing
@@ -105,10 +105,10 @@ function solve_ss(hh, buffers, p; A::Float64, K_init::Float64,
     while iters < max_iter
         env  = (; K, aiyagari_prices(K, A, p)...)
         res  = isnothing(V) ?
-            solve_steady_state_given_env!(hh, env, buffers) :
-            solve_steady_state_given_env!(hh, env, buffers; V_init = V, Λ_init = Λ)
+            solve_steady_state_given_env!(hh, env) :
+            solve_steady_state_given_env!(hh, env; V_init = V, Λ_init = Λ)
         V, Λ = res.V, res.Λ
-        K_supplied = compute_moments(hh, env).K_supplied
+        K_supplied = compute_moments(hh, Λ, env).K_supplied
         K_err = abs(K_supplied - K) / K
         iters += 1
         K_err <= rtol && break
@@ -119,7 +119,7 @@ function solve_ss(hh, buffers, p; A::Float64, K_init::Float64,
 end
 
 println("Solving pre-shock steady state (A = 1.0)…")
-ss_pre = solve_ss(hh, buffers, p; A = 1.0, K_init = 5.0)
+ss_pre = solve_ss(hh, p; A = 1.0, K_init = 5.0)
 @printf "  K_ss_pre = %.4f, r = %.4f, w = %.4f  (converged in %d iters)\n" ss_pre.K ss_pre.r ss_pre.w ss_pre.iters
 
 
@@ -127,21 +127,22 @@ ss_pre = solve_ss(hh, buffers, p; A = 1.0, K_init = 5.0)
 #-----------------------------------------------------#
 
 println("Solving post-shock steady state (A = 1.05)…")
-A_0    = 1.05
-ss_post = solve_ss(hh, buffers, p; A = A_0, K_init = ss_pre.K)
+A_0     = 1.05
+ss_post = solve_ss(hh, p; A = A_0, K_init = ss_pre.K)
 @printf "  K_ss_post = %.4f, r = %.4f, w = %.4f  (converged in %d iters)\n" ss_post.K ss_post.r ss_post.w ss_post.iters
 
 
-# 5. MIT-Shock Transition #
-#-------------------------#
+# 5. MIT-Shock Transition — Library Driver #
+#------------------------------------------#
 
 # Perfect-foresight transition under a one-time unanticipated permanent
-# TFP step `A_0 = 1.05`. The transition driver is rolled here, period
-# by period:
-#   (a) backward sweep with terminal V_{T+1} = V_ss_post,
-#   (b) forward sweep with initial Λ_1 = Λ_ss_pre (re-seating per-stage
-#       kernels at each period-t env),
-#   (c) damped tatonnement update on the K-path.
+# TFP step `A_0 = 1.05`. Inside the K-path tatonnement, each candidate
+# `K_path` defines an `env_path`; we hand that to the library's
+# `solve_transition_given_env_path!`, which allocates per-period chains
+# sharing the Spec, runs a backward sweep (terminal `V_T = V_ss_post`)
+# followed by a forward sweep (initial `Λ_0 = Λ_ss_pre`), and returns
+# the V/Λ paths plus per-period moments. The outer loop reads off
+# `K_supplied[t]` from `tr.moments_path` and damped-updates `K_path`.
 
 T       = 100
 A_path  = tfp_path(T; A_0 = A_0)
@@ -149,38 +150,26 @@ damping = 0.2
 tol_tr  = 1e-3
 maxiter = 200
 
-K_ss_pre, V_ss_pre, Λ_ss_pre   = ss_pre.K,  ss_pre.V,  ss_pre.Λ
+K_ss_pre,  V_ss_pre,  Λ_ss_pre  = ss_pre.K,  ss_pre.V,  ss_pre.Λ
 K_ss_post, V_ss_post, Λ_ss_post = ss_post.K, ss_post.V, ss_post.Λ
 
-V_path  = [copy(V_ss_post) for _ in 1:(T + 1)]
-Λ_path  = [zeros(Float64, dims...) for _ in 1:(T + 1)]
-Λ_path[1] .= Λ_ss_pre
-
-K_path     = collect(range(K_ss_pre, K_ss_post; length = T))
-K_supplied = zeros(T)
+K_path      = collect(range(K_ss_pre, K_ss_post; length = T))
+K_supplied  = zeros(T)
 res_history = Float64[]
-tr_iters   = 0
-res        = Inf
+tr_iters    = 0
+res         = Inf
 
 println("\nSolving MIT-shock transition (permanent step A = $(A_0))…")
 @time begin
     while tr_iters < maxiter
-        # 5a. Backward sweep
-        for t in T:-1:1
-            env = (; K = K_path[t], aiyagari_prices(K_path[t], A_path[t], p)...)
-            V_path[t] .= backward!(hh, V_path[t + 1], env, buffers)
-        end
-
-        # 5b. Forward sweep — re-seat kernels at each period-t env, then
-        # push Λ and read off K_supplied.
+        env_path = [(; K = K_path[t], aiyagari_prices(K_path[t], A_path[t], p)...)
+                    for t in 1:T]
+        tr = solve_transition_given_env_path!(hh, env_path;
+                                              Λ_0 = Λ_ss_pre, V_T = V_ss_post)
         for t in 1:T
-            env = (; K = K_path[t], aiyagari_prices(K_path[t], A_path[t], p)...)
-            backward!(hh, V_path[t + 1], env, buffers)
-            Λ_path[t + 1] .= forward!(hh, Λ_path[t], buffers)
-            K_supplied[t]  = compute_moments(hh, env).K_supplied
+            K_supplied[t] = tr.moments_path[t].K_supplied
         end
 
-        # 5c. Residual + damped update
         global res = maximum(abs, K_supplied .- K_path)
         push!(res_history, res)
         global tr_iters += 1
@@ -213,12 +202,11 @@ println("  Residual history (last 5): ",
 
 println("\nSequence-space-Jacobian sketch at the pre-shock steady state (T_horizon = 30)…")
 ss_env = (; K = K_ss_pre, aiyagari_prices(K_ss_pre, 1.0, p)...)
-ssj_buffers = allocate(hh)
-backward!(hh, V_ss_pre, ss_env, ssj_buffers)
-forward!(hh, Λ_ss_pre, ssj_buffers)
+backward!(hh, V_ss_pre, ss_env)
+forward!(hh,  Λ_ss_pre)
 
 T_horizon = 30
-𝓔 = expectation_vectors(hh, cell -> cell.wealth, T_horizon, ssj_buffers)
+𝓔 = expectation_vectors(hh, cell -> cell.wealth, T_horizon)
 @printf "  produced %d expectation arrays of shape %s\n" length(𝓔) string(size(𝓔[1]))
 @printf "  ⟨𝓔[1], Λ_ss⟩ = %.4f  (≈ K_ss_pre = %.4f)\n" sum(𝓔[1] .* Λ_ss_pre) K_ss_pre
 

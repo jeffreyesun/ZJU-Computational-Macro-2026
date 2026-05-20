@@ -2,11 +2,11 @@ using Test
 using HouseholdStages
 
 @testset "static_env_deps defaults to empty NamedTuple" begin
-    @test static_env_deps(MarkovStage) === NamedTuple()
-    @test static_env_deps(ArgmaxStage) === NamedTuple()
-    @test static_env_deps(LogitChoiceStage) === NamedTuple()
-    @test static_env_deps(ForgetfulSumStage) === NamedTuple()
-    @test static_env_deps(IdentityStage) === NamedTuple()
+    @test static_env_deps(HouseholdStages.MarkovStageSpec) === NamedTuple()
+    @test static_env_deps(HouseholdStages.ArgmaxStageSpec) === NamedTuple()
+    @test static_env_deps(HouseholdStages.LogitChoiceStageSpec) === NamedTuple()
+    @test static_env_deps(HouseholdStages.ForgetfulSumStageSpec) === NamedTuple()
+    @test static_env_deps(HouseholdStages.IdentityStageSpec) === NamedTuple()
 end
 
 @testset "effective_env_slice is empty when closures aren't introspected" begin
@@ -56,7 +56,7 @@ end
         next_state_idx = (cell, a) -> a,
         ε              = Param(:ξ),
     )
-    chain = s1 ∘ₛ s2
+    chain = s1 ∘ s2
     @test :ξ in chain_env_names(chain)
 end
 
@@ -69,6 +69,6 @@ end
         ε              = Param(0.5),       # calibrated; nothing in slice
     )
     @test isempty(effective_env_slice(stage))
-    stage.ε.val = :ξ
+    stage.spec.ε.val = :ξ
     @test :ξ in effective_env_slice(stage)
 end

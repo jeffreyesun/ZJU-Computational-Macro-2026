@@ -8,8 +8,7 @@ integrand (typically `sum` or `mean`). `aggregate_over` and `per`
 split along; `weights` (`Symbol` or `nothing`) names an env field or
 stage-kernel weight (`nothing` means Λ is the weight).
 
-Construct via [`at_end`](@ref) (typical) or `moment` (anchored to a
-specific inner stage; Step 14).
+Construct via [`at_end`](@ref) (typical).
 """
 struct MomentSpec{F, R, AO, W, P}
     integrand      :: F
@@ -29,8 +28,7 @@ Construct a moment anchored at the end of the household chain.
 integrand. As a convenience, a `Symbol` is interpreted as a cell-field
 shortcut: `:wealth` is sugar for `(cell; env) -> cell.wealth`. `env`
 fields the closure reads are validated at runtime (by `getproperty`),
-not at construction time — the package does not require an explicit
-dependency declaration.
+not at construction time.
 """
 function at_end(; integrand,
                 reduce,
@@ -46,52 +44,92 @@ _wrap_integrand(f) = f
 _wrap_integrand(s::Symbol) = (cell; env) -> getproperty(cell, s)
 
 """
-    lift_moments(stage; specs...) -> ChainStage
+    define_moment!(chain, name::Symbol, spec::MomentSpec;
+                   overwrite_existing_moment_definitions = false) -> chain
 
-Return a new `ChainStage` with the given moment `specs` attached. If
-`stage` is already a `ChainStage`, the new chain carries the same stages
-and the new moments (errors if the input already has moments); if
-`stage` is a single stage, it is wrapped into a singleton chain.
+Attach a moment named `name` to the chain. The moments live in a
+mutable `Dict` on the chain's `Spec` so subsequent calls can extend
+the chain's moment menu without rebuilding it.
 
-After a forward pass, [`compute_moments`](@ref) evaluates every spec
-against the chain's terminal `Λ_end`.
+Append-only by default: redefining an existing name errors. Pass
+`overwrite_existing_moment_definitions = true` for the rare
+legitimate-overwrite case. The verbose kwarg name is deliberate —
+silent shadowing is hard to debug, and this opts the user in
+explicitly.
+
+Returns the chain (mutated), so the form
+`hh = define_moment!(hh, ...)` reads cleanly.
 """
-function lift_moments(stage::AbstractStage; specs...)
-    chain = stage isa ChainStage ? stage : ChainStage((stage,))
-    isempty(chain.moments) ||
-        error("lift_moments: chain already has moments attached; lift them once, last.")
-    nt = NamedTuple{Tuple(keys(specs))}(Tuple(values(specs)))
-    return ChainStage(chain.stages; moments = nt)
+function define_moment!(chain::ChainStage, name::Symbol, spec::MomentSpec;
+                        overwrite_existing_moment_definitions::Bool = false)
+    m = chain.spec.moments
+    if haskey(m, name) && !overwrite_existing_moment_definitions
+        error("define_moment!: moment :$name is already defined on this chain. " *
+              "Pass overwrite_existing_moment_definitions = true to overwrite, " *
+              "or rebuild the chain.")
+    end
+    m[name] = spec
+    return chain
 end
+
+"""
+    define_moments!(chain; kwargs..., overwrite_existing_moment_definitions = false)
+        -> chain
+
+Batch form. Each kwarg is `name = MomentSpec(...)`. Same append-only
+semantics as [`define_moment!`](@ref).
+"""
+function define_moments!(chain::ChainStage;
+                         overwrite_existing_moment_definitions::Bool = false,
+                         kwargs...)
+    for (name, spec) in kwargs
+        define_moment!(chain, name, spec;
+                       overwrite_existing_moment_definitions)
+    end
+    return chain
+end
+
+# A single stage can be promoted to a singleton chain to receive moments.
+define_moment!(stage::AbstractStage, name::Symbol, spec::MomentSpec; kwargs...) =
+    define_moment!(ChainStage((stage,)), name, spec; kwargs...)
+define_moments!(stage::AbstractStage; kwargs...) =
+    define_moments!(ChainStage((stage,)); kwargs...)
 
 # Moment computation #
 #--------------------#
 
 """
-    compute_moments(chain::ChainStage, env) -> NamedTuple
+    compute_moments(spec::ChainStageSpec, Λ, env) -> NamedTuple
+    compute_moments(chain::ChainStage,    Λ, env) -> NamedTuple
 
-Evaluate every spec in `chain.moments` against the chain's terminal
-`Λ_end` and `env`. Returns a NamedTuple keyed by spec name. A spec
-without `aggregate_over` / `per` is reduced to a scalar via
-`spec.reduce(per_cell_array)`, where the per-cell array is
-`integrand * mass`. `reduce = sum` and `reduce = mean` are the common
-cases.
+Evaluate every moment spec attached to the chain against the given
+distribution `Λ` and `env`. Returns a NamedTuple keyed by spec
+name. A spec without `aggregate_over` / `per` is reduced to a scalar
+via `spec.reduce(per_cell_array)`, where the per-cell array is
+`integrand * mass`.
 
 Errors if the chain has no moment specs attached.
+
+The Λ is passed explicitly (the function does not reach into any
+buffer state). The chain's output layout is read from the Spec to
+find cell coordinates.
+
+The Spec-keyed signature is the primary; the bundled-stage form is
+one-line sugar.
 """
-function compute_moments(chain::ChainStage, env)
-    isempty(chain.moments) &&
-        error("compute_moments: ChainStage has no moments attached; call lift_moments first.")
-    Λ = Λ_end_buffer(chain)
-    return _compute_each(chain.moments, chain.out_layout, Λ, env)
+function compute_moments(spec::ChainStageSpec, Λ, env)
+    moments = spec.moments
+    isempty(moments) &&
+        error("compute_moments: ChainStageSpec has no moments attached; call define_moment! first.")
+    layout = spec.out_layout
+    out = Dict{Symbol, Any}()
+    for (name, mspec) in moments
+        out[name] = _eval_spec(mspec, layout, Λ, env)
+    end
+    return NamedTuple{Tuple(keys(out))}(Tuple(values(out)))
 end
 
-# Walk the NamedTuple of specs and produce a NamedTuple of values.
-@generated function _compute_each(specs::NamedTuple{Names},
-                                  layout, Λ, env) where {Names}
-    exprs = [:(_eval_spec(specs.$n, layout, Λ, env)) for n in Names]
-    return Expr(:tuple, Expr(:parameters, [Expr(:kw, n, exprs[i]) for (i, n) in enumerate(Names)]...))
-end
+compute_moments(chain::ChainStage, Λ, env) = compute_moments(chain.spec, Λ, env)
 
 function _eval_spec(spec::MomentSpec, layout::StateLayout, Λ, env)
     cells_arr = cell_array(layout)

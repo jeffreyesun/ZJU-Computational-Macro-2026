@@ -4,8 +4,19 @@ module HouseholdStages
 # content (stage composition, product, K-operator framing, per-stage
 # functorial lifts, V/Λ duality, sequence-space utilities) lives here.
 # Outer-loop machinery (EquilibriumProblem, blocks, train_vnet) was
-# dropped in the 2026-05-13 refactor — see REFACTOR_PLAN.md and the
-# attic at _attic/CVIAYN_core_code/ for that history.
+# dropped in the 2026-05-13 refactor; the 2026-05-19 refactor split
+# every stage into Spec/Buffer/Stage trichotomy.
+#
+# The 2026-05-20 follow-up extended the Spec/Buffer ↔ Stage dispatch
+# convention from `backward!`/`forward!` to every outer-loop helper:
+# `solve_vfi_steady_state_given_env!`,
+# `solve_lambda_steady_state_given_env!`,
+# `solve_steady_state_given_env!`,
+# `solve_transition_given_env_path!`, and `compute_direct_jacobian!`
+# each have a Spec/Buffer-keyed primitive (in `outer_loop_internal.jl`)
+# and a Stage-keyed public wrapper (in `outer_loop.jl`). See
+# REFACTOR_PLAN.md and HOUSEHOLD_STAGES_REFACTOR_PLAN.md at the repo
+# root.
 
 using ForwardDiff: ForwardDiff, Dual
 
@@ -24,10 +35,11 @@ export
     k1_argmax_monotone!, k1_argmax_dc!,
     # Stage interface
     AbstractStage, allocate, backward!, forward!,
-    V_start_buffer, Λ_end_buffer,
+    V_start_buffer, Λ_end_buffer, bundle, invalidate!,
     # Stage dependency machinery
     static_env_deps, effective_env_slice, validate_env, chain_env_names,
-    # Concrete stages
+    env_schema, make_env,
+    # Concrete stages (bundled types only — Spec/Buffer are internal)
     MarkovStage,
     ArgmaxStage, LogitChoiceStage,
     MigrationStage,
@@ -38,22 +50,28 @@ export
     IdentityStage,
     UtilityStage,
     BorrowingConstraintStage,
-    # Composition
+    # Composition (∘ and × are the canonical operators; ∘ₛ/×ₛ are
+    # one-cycle deprecation aliases that share the same methods)
     ChainStage, ∘ₛ,
     # Product
-    ProductStage, product, ×ₛ, replicate_age,
-    # Moments (lift_moments returns a ChainStage with the `moments` field populated)
-    MomentSpec, at_end, lift_moments, compute_moments,
+    ProductStage, product, ×, ×ₛ, replicate_age,
+    # Moments
+    MomentSpec, at_end,
+    define_moment!, define_moments!, compute_moments,
     # Aggregate-Jacobian utilities (sequence-space)
     expectation_vectors, build_F, J_from_F,
     # Lifts
     lift_jacobian, with_eltype,
     backward_adjoint!, forward_adjoint!,
     lift_gpu,
-    # Inner-solve helpers at a fixed env (2026-05-18, trimmed)
+    # Outer-loop computation surface — Spec/Buffer-keyed primitives
+    # (in outer_loop_internal.jl) and Stage-keyed public wrappers
+    # (in outer_loop.jl) share these names; dispatch routes them.
     solve_vfi_steady_state_given_env!,
     solve_lambda_steady_state_given_env!,
-    solve_steady_state_given_env!
+    solve_steady_state_given_env!,
+    solve_transition_given_env_path!,
+    compute_direct_jacobian!
 
 include("layout.jl")
 include("param.jl")
@@ -76,6 +94,7 @@ include("moments.jl")
 include("lifts/jacobian.jl")
 include("lifts/gpu.jl")
 include("sequence_space.jl")
+include("outer_loop_internal.jl")
 include("outer_loop.jl")
 
 end # module HouseholdStages

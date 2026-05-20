@@ -55,11 +55,12 @@ end
     P = [0.7 0.3; 0.3 0.7]
     layout = StateLayout(StateAxis(:z, discrete_finite([0.0, 1.0])))
     chain = MarkovStage(layout; axis = :z, transition = P)
-    buffers = allocate(chain)
+    # Seed kernels at the steady state via a backward call.
+    backward!(chain, zeros(2), NamedTuple())
     # Integrand: identity on z (so E_t[z | s_0 = s] is the t-step
     # forward expected value of z).
     integrand = cell -> cell.z
-    Es = expectation_vectors(chain, integrand, 3, buffers)
+    Es = expectation_vectors(chain, integrand, 3)
     @test length(Es) == 3
     # E_0 = [0.0, 1.0] (identity).
     @test Es[1] ≈ [0.0, 1.0]
@@ -69,15 +70,16 @@ end
     @test Es[3] ≈ P * Es[2] atol = 1e-12
 end
 
-@testset "expectation_vectors — chain (Markov ∘ₛ Identity)" begin
+@testset "expectation_vectors — chain (Markov ∘ Identity)" begin
     P = [0.8 0.2; 0.2 0.8]
     layout = StateLayout(StateAxis(:z, discrete_finite([0.0, 1.0])))
     s1 = MarkovStage(layout; axis = :z, transition = P)
     s2 = IdentityStage(layout)
-    chain = s1 ∘ₛ s2
-    buffers = allocate(chain)
+    chain = s1 ∘ s2
+    # Seed kernels.
+    backward!(chain, zeros(2), NamedTuple())
     integrand = cell -> cell.z
-    Es = expectation_vectors(chain, integrand, 2, buffers)
+    Es = expectation_vectors(chain, integrand, 2)
     @test length(Es) == 2
     @test Es[1] ≈ [0.0, 1.0]
     # The chain's K^T = (IdentityStage K^T) · (MarkovStage K^T) = I · P.

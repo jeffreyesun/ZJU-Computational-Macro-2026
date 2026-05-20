@@ -1,0 +1,1 @@
+This is basically a Markov transition with effort. Taking a bunch of market-tightnesses (or derived statistics) from the env, agents choose search effort to affect their own transition probabilities and maximize expected utility of matching.

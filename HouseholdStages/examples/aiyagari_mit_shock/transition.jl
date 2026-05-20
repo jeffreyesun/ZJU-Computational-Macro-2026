@@ -24,11 +24,17 @@
 #      path at `t = 1` (perfect foresight).
 #   4. Initialise `{K_t}` linearly interpolating from `K_ss^pre` →
 #      `K_ss^post`. Iterate:
-#      a. Backward sweep with terminal `V_{T+1} = V_ss^post`.
-#      b. Forward sweep with initial `Λ_1 = Λ_ss^pre`; re-seat kernels
-#         per period; read off `K^supplied_t`.
+#      a. Build `env_path` from the current `K_t` / `A_t`.
+#      b. Call `solve_transition_given_env_path!` with terminal
+#         `V_T = V_ss^post` and initial `Λ_0 = Λ_ss^pre`; read
+#         `K^supplied_t` off `tr.moments_path`.
 #      c. Damped update `K_t ← (1-d) K_t + d K^supplied_t`.
 #   5. Stop when `‖K^supplied - K‖_∞ < tol`.
+#
+# The per-period backward/forward sweep with cache-correct kernels is
+# encapsulated inside `solve_transition_given_env_path!` — see the L05
+# tutorial notebook for both the library form and a hand-rolled
+# equivalent that exposes what the helper does inside.
 
 include("model.jl")
 
@@ -37,8 +43,8 @@ using Printf
 """
 Solve the deterministic steady state at a fixed TFP level by damped
 tatonnement on aggregate K. Returns the converged steady state plus
-the household chain and `buffers` workspace so the SSJ demo can re-seat
-kernels at the steady-state env without re-allocating.
+the household chain so the SSJ demo can re-seat kernels at the
+steady-state env without re-allocating.
 """
 function mit_steady_state(p = mit_shock_params;
                           A::Float64   = 1.0,
@@ -47,8 +53,7 @@ function mit_steady_state(p = mit_shock_params;
                           rtol         = 2e-2,
                           max_iter     = 500,
                           verbosity    = 0)
-    hh      = aiyagari_household(p)
-    buffers = allocate(hh)
+    hh = aiyagari_household(p)
 
     K = K_init
     iterations = 0
@@ -59,12 +64,12 @@ function mit_steady_state(p = mit_shock_params;
     while iterations < max_iter
         env = (; K, aiyagari_prices(K, A, p)...)
         res = isnothing(V) ?
-            solve_steady_state_given_env!(hh, env, buffers) :
-            solve_steady_state_given_env!(hh, env, buffers;
+            solve_steady_state_given_env!(hh, env) :
+            solve_steady_state_given_env!(hh, env;
                                           V_init = V, Λ_init = Λ)
-        (; V, Λ, vfi_iters, lambda_iters) = res
+        (; V, Λ, history) = res; (; vfi_iters, lambda_iters) = history
 
-        K_supplied = compute_moments(hh, env).K_supplied
+        K_supplied = compute_moments(hh, Λ, env).K_supplied
         K_err = abs(K_supplied - K) / K
         push!(residual_history, K_err)
         iterations += 1
@@ -80,7 +85,7 @@ function mit_steady_state(p = mit_shock_params;
     converged || @warn "MIT-shock SS tatonnement stuck at tolerance $rtol after $iterations iterations."
 
     (; r, w) = aiyagari_prices(K, A, p)
-    return (; K, r, w, V, Λ, hh, buffers,
+    return (; K, r, w, V, Λ, hh,
               iterations, converged, residual_history)
 end
 
@@ -119,42 +124,36 @@ function mit_shock_transition(;
     K_ss_post, V_ss_post, Λ_ss_post = ss_post.K, ss_post.V, ss_post.Λ
     verbose && @printf "  K_ss_post = %.4f, r = %.4f, w = %.4f\n" K_ss_post ss_post.r ss_post.w
 
-    # 3. Fresh chain + workspace for the path solve
-    hh      = aiyagari_household(p)
-    buffers = allocate(hh)
-    dims    = layout_size(first(hh.stages).input_layout)
-
-    # V_path[T+1] = V_ss_post (terminal condition); V_path[1..T] filled by backward sweep
-    # Λ_path[1]   = Λ_ss_pre  (initial  condition); Λ_path[2..T+1] filled by forward sweep
-    V_path = [copy(V_ss_post) for _ in 1:(T + 1)]
-    Λ_path = [zeros(Float64, dims...) for _ in 1:(T + 1)]
-    Λ_path[1] .= Λ_ss_pre
+    # 3. Fresh chain for the path solve
+    hh = aiyagari_household(p)
 
     # 4. Exogenous TFP path (permanent step)
     A_path = tfp_path(T; A_0 = A_0)
 
     # 5. Initial K guess: linear interpolation between the two SSs.
-    K_path = collect(range(K_ss_pre, K_ss_post; length = T))
-    K_supplied = zeros(T)
+    K_path           = collect(range(K_ss_pre, K_ss_post; length = T))
+    K_supplied       = zeros(T)
     residual_history = Float64[]
-    iterations = 0
-    res = Inf
+    iterations       = 0
+    res              = Inf
+    V_path           = nothing
+    Λ_path           = nothing
 
     while iterations < maxiter
-        # 5a. Backward sweep V_{T+1} = V_ss_post → V_T → … → V_1
-        for t in T:-1:1
-            env = (; K = K_path[t], aiyagari_prices(K_path[t], A_path[t], p)...)
-            V_path[t] .= backward!(hh, V_path[t + 1], env, buffers)
-        end
+        # 5a. Build env_path from the current K_t and exogenous A_t.
+        env_path = [(; K = K_path[t], aiyagari_prices(K_path[t], A_path[t], p)...)
+                    for t in 1:T]
 
-        # 5b. Forward sweep Λ_1 = Λ_ss_pre → … → Λ_{T+1}; read K^supplied_t
+        # 5b. One library call — backward sweep (terminal V_T = V_ss_post)
+        # followed by forward sweep (initial Λ_0 = Λ_ss_pre) with per-period
+        # buffers, so each forward sees the period-correct kernel by
+        # construction.
+        tr = solve_transition_given_env_path!(hh, env_path;
+                                              Λ_0 = Λ_ss_pre, V_T = V_ss_post)
+        V_path = tr.V_path
+        Λ_path = tr.Λ_path
         for t in 1:T
-            env = (; K = K_path[t], aiyagari_prices(K_path[t], A_path[t], p)...)
-            # Re-seat per-stage kernels at period-t env (backward sweep
-            # walked through later periods); only then is Λ-push consistent.
-            backward!(hh, V_path[t + 1], env, buffers)
-            Λ_path[t + 1] .= forward!(hh, Λ_path[t], buffers)
-            K_supplied[t] = compute_moments(hh, env).K_supplied
+            K_supplied[t] = tr.moments_path[t].K_supplied
         end
 
         # 5c. Residual + damped update

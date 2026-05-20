@@ -7,7 +7,7 @@
 # shock. The household problem decomposes into three stages, in time
 # order:
 #
-#     IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage
+#     IncomeShock ∘ IncomeReceipt ∘ ConsumptionSavingsStage
 #
 # What is MIT-specific. Production is Cobb-Douglas in `(K_t, A_t)` with
 # a fixed labor `L`; the TFP `A_t` is carried as an explicit argument
@@ -59,8 +59,8 @@ u_crra(c, valσ::Val) = c < 0 ? -Inf : _u_crra(c, valσ)
 #--------------------------#
 
 """
-Build the moment-lifted Aiyagari household block
-`IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavings` (same shape as
+Build the moment-attached Aiyagari household block
+`IncomeShock ∘ IncomeReceipt ∘ ConsumptionSavings` (same shape as
 the steady-state example).
 """
 function aiyagari_household(p = mit_shock_params)
@@ -82,7 +82,8 @@ function aiyagari_household(p = mit_shock_params)
         monotone_search = :divide_conquer,
     )
 
-    return lift_moments(shock ∘ₛ receipt ∘ₛ savings;
+    hh = shock ∘ receipt ∘ savings
+    return define_moments!(hh;
         K_supplied = at_end(integrand = :wealth, reduce = sum),
     )
 end

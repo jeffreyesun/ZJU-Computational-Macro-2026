@@ -28,8 +28,8 @@ function _tiny_aiyagari_household(layout::StateLayout;
         wealth_axis     = :wealth,
         monotone_search = :divide_conquer,
     )
-    chain = income_shock ∘ₛ income_receipt ∘ₛ savings
-    return lift_moments(chain;
+    chain = income_shock ∘ income_receipt ∘ savings
+    return define_moments!(chain;
         K_supplied = at_end(integrand = :wealth, reduce = sum),
     )
 end
@@ -44,28 +44,26 @@ end
 @testset "solve_vfi_steady_state_given_env! — converges on a tiny chain" begin
     layout = _tiny_aiyagari_layout()
     hh = _tiny_aiyagari_household(layout)
-    buffers = allocate(hh)
     env = (; K = 5.0, _tiny_aiyagari_prices(5.0)...)
 
-    res = solve_vfi_steady_state_given_env!(hh, env, buffers;
+    res = solve_vfi_steady_state_given_env!(hh, env;
                                              tol = 1e-6, maxiter = 1000)
     @test res.converged
     @test res.iters > 1
-    @test maximum(abs, backward!(hh, res.V, env, buffers) .- res.V) < 1e-5
+    @test maximum(abs, backward!(hh, res.V, env) .- res.V) < 1e-5
 end
 
 
 @testset "solve_lambda_steady_state_given_env! — converges to a probability distribution" begin
     layout = _tiny_aiyagari_layout()
     hh = _tiny_aiyagari_household(layout)
-    buffers = allocate(hh)
     env = (; K = 5.0, _tiny_aiyagari_prices(5.0)...)
 
     # Seed kernels by running backward at this env.
-    solve_vfi_steady_state_given_env!(hh, env, buffers;
+    solve_vfi_steady_state_given_env!(hh, env;
                                        tol = 1e-6, maxiter = 1000)
 
-    res = solve_lambda_steady_state_given_env!(hh, buffers;
+    res = solve_lambda_steady_state_given_env!(hh;
                                                 tol = 1e-6, maxiter = 50_000)
     @test res.converged
     @test isapprox(sum(res.Λ), 1.0; atol = 1e-8)
@@ -76,35 +74,32 @@ end
 @testset "solve_steady_state_given_env! — bundles V + Λ at one env" begin
     layout = _tiny_aiyagari_layout()
     hh = _tiny_aiyagari_household(layout)
-    buffers = allocate(hh)
     env = (; K = 5.0, _tiny_aiyagari_prices(5.0)...)
 
-    res = solve_steady_state_given_env!(hh, env, buffers;
+    res = solve_steady_state_given_env!(hh, env;
                                          vfi_tol = 1e-6, lambda_tol = 1e-6)
-    @test res.vfi_iters > 1
-    @test res.lambda_iters > 1
+    @test res.history.vfi_iters > 1
+    @test res.history.lambda_iters > 1
     @test isapprox(sum(res.Λ), 1.0; atol = 1e-8)
     # Bellman fixed-point check
-    @test maximum(abs, backward!(hh, res.V, env, buffers) .- res.V) < 1e-5
-    # Moments are deliberately not bundled — caller calls compute_moments.
-    moments = compute_moments(hh, env)
-    @test moments.K_supplied > 0.0
+    @test maximum(abs, backward!(hh, res.V, env) .- res.V) < 1e-5
+    # Moments now flow through the public-helper bundle.
+    @test res.moments.K_supplied > 0.0
 end
 
 
 @testset "solve_steady_state_given_env! — V_init / Λ_init kwargs warm-start" begin
     layout = _tiny_aiyagari_layout()
     hh = _tiny_aiyagari_household(layout)
-    buffers = allocate(hh)
     env = (; K = 5.0, _tiny_aiyagari_prices(5.0)...)
 
-    res1 = solve_steady_state_given_env!(hh, env, buffers;
+    res1 = solve_steady_state_given_env!(hh, env;
                                           vfi_tol = 1e-6, lambda_tol = 1e-6)
     # Re-solve with the previous (V, Λ) as warm-start: should converge in
     # vastly fewer iters because we're already at the fixed point.
-    res2 = solve_steady_state_given_env!(hh, env, buffers;
+    res2 = solve_steady_state_given_env!(hh, env;
                                           V_init = res1.V, Λ_init = res1.Λ,
                                           vfi_tol = 1e-6, lambda_tol = 1e-6)
-    @test res2.vfi_iters < res1.vfi_iters
-    @test res2.lambda_iters < res1.lambda_iters
+    @test res2.history.vfi_iters < res1.history.vfi_iters
+    @test res2.history.lambda_iters < res1.history.lambda_iters
 end

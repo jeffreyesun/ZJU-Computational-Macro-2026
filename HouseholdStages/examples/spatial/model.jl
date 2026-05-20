@@ -6,7 +6,7 @@
 # carries a third axis `:location` over `[:home, :abroad]`, and the
 # within-period problem decomposes into four stages, in time order:
 #
-#     IncomeShock ∘ₛ Migration ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage
+#     IncomeShock ∘ Migration ∘ IncomeReceipt ∘ ConsumptionSavingsStage
 #
 # Wealth + income are the canonical L03/L04 decomposition (same as
 # `../aiyagari/model.jl`); the migration stage is inserted *after* the
@@ -66,9 +66,9 @@ u_crra(c, valσ::Val) = c < 0 ? -Inf : _u_crra(c, valσ)
 #--------------------------#
 
 """
-Build the moment-lifted spatial household block
-`IncomeShock ∘ₛ Migration ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavings`,
-with per-location capital and population moments lifted at the end.
+Build the moment-attached spatial household block
+`IncomeShock ∘ Migration ∘ IncomeReceipt ∘ ConsumptionSavings`,
+with per-location capital and population moments attached at the end.
 The wealth-axis log grid and the four-stage layout are inlined here.
 """
 function spatial_household(p = params)
@@ -101,7 +101,8 @@ function spatial_household(p = params)
         monotone_search = :divide_conquer,
     )
 
-    return lift_moments(shock ∘ₛ move ∘ₛ receipt ∘ₛ savings;
+    hh = shock ∘ move ∘ receipt ∘ savings
+    return define_moments!(hh;
         K_home     = at_end(
             integrand = (cell; env) -> cell.location == :home ? cell.wealth : 0.0,
             reduce = sum),

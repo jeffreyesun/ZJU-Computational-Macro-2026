@@ -6,12 +6,12 @@
 # `include` of sibling example folders. The within-period problem
 # decomposes into three stages, in time order:
 #
-#     IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage
+#     IncomeShock ∘ IncomeReceipt ∘ ConsumptionSavingsStage
 #
 # (the canonical L03 / L04 decomposition). Walkthrough is organised
 # in four numbered sections so a reader can step layer by layer:
-# parameters and state layout, household stage chain and workspace,
-# single-K inner solve, outer tatonnement driver.
+# parameters and state layout, household stage chain, single-K inner
+# solve, outer tatonnement driver.
 
 using HouseholdStages
 using Printf
@@ -40,8 +40,8 @@ _u_crra(c, ::Val{1}) = log(c)
 _u_crra(c, ::Val{σ}) where σ = (c^(1 - σ)) / (1 - σ)
 u_crra(c, valσ::Val) = c < 0 ? -Inf : _u_crra(c, valσ)
 
-# Assemble the moment-lifted household block, with the wealth-axis log
-# grid and three-stage chain inlined here.
+# Assemble the moment-attached household block, with the wealth-axis
+# log grid and three-stage chain inlined here.
 function aiyagari_household(p::AiyagariParams)
     layout = StateLayout(
         StateAxis(:wealth, continuous_grid(p.w_min, p.w_max;
@@ -60,7 +60,7 @@ function aiyagari_household(p::AiyagariParams)
         wealth_axis     = :wealth,
         monotone_search = :divide_conquer,
     )
-    return lift_moments(shock ∘ₛ receipt ∘ₛ savings;
+    return define_moments!(shock ∘ receipt ∘ savings;
         K_supplied = at_end(integrand = :wealth, reduce = sum),
     )
 end
@@ -76,15 +76,16 @@ p = AiyagariParams()
 @printf "Calibration: β = %.3f, σ = %.2f, α = %.2f, δ = %.2f\n" p.β p.σ p.α p.δ
 
 
-# 2. Household Stage Chain and Workspace #
-#----------------------------------------#
+# 2. Household Stage Chain #
+#--------------------------#
 
-# `hh` is the moment-lifted chain `shock ∘ₛ receipt ∘ₛ savings`. The
-# `K_supplied = ∫ wealth dΛ` moment is read off at the end.
+# `hh` is the moment-attached chain `shock ∘ receipt ∘ savings`. The
+# `K_supplied = ∫ wealth dΛ` moment is read off at the end. Buffers
+# are allocated automatically inside each bundled stage; we never
+# touch them directly.
 
-hh      = aiyagari_household(p)
-buffers = allocate(hh)
-dims    = layout_size(first(hh.stages).input_layout)
+hh   = aiyagari_household(p)
+dims = layout_size(first(hh.spec.stages).input_layout)
 
 @printf "Layout: wealth %d × income %d = %d cells\n" dims[1] dims[2] prod(dims)
 
@@ -95,17 +96,17 @@ dims    = layout_size(first(hh.stages).input_layout)
 # Fix a trial K, compute Cobb-Douglas (r, w), iterate V backward to its
 # fixed point and Λ forward to stationarity via the bundled
 # `solve_steady_state_given_env!` helper, then read off K_supplied via
-# `compute_moments`. With no warm-start, V_init defaults to zeros and
-# Λ_init to the uniform distribution.
+# `compute_moments(hh, Λ, env)`. With no warm-start, V_init defaults
+# to zeros and Λ_init to the uniform distribution.
 
 K_trial   = 5.0
 env_trial = (; K = K_trial, aiyagari_prices(K_trial, p)...)
-(; V, Λ, vfi_iters, lambda_iters) =
-    solve_steady_state_given_env!(hh, env_trial, buffers)
-moms_trial = compute_moments(hh, env_trial)
+res_trial   = solve_steady_state_given_env!(hh, env_trial)
+V, Λ        = res_trial.V, res_trial.Λ
+moms_trial  = compute_moments(hh, Λ, env_trial)
 
 @printf "K_trial = %.4f → K_supplied = %.4f (residual = %+.4f)\n" K_trial moms_trial.K_supplied (moms_trial.K_supplied - K_trial)
-@printf "  VFI: %d iters; Λ: %d iters; r = %.4f, w = %.4f\n" vfi_iters lambda_iters env_trial.r env_trial.w
+@printf "  VFI: %d iters; Λ: %d iters; r = %.4f, w = %.4f\n" res_trial.history.vfi_iters res_trial.history.lambda_iters env_trial.r env_trial.w
 
 
 # 4. Outer Tatonnement #
@@ -128,15 +129,15 @@ println("Solving Aiyagari steady state…")
 @time begin
     while iters < max_iter
         env = (; K, aiyagari_prices(K, p)...)
-        res = solve_steady_state_given_env!(hh, env, buffers; V_init = V, Λ_init = Λ)
+        res = solve_steady_state_given_env!(hh, env; V_init = V, Λ_init = Λ)
         global V, Λ = res.V, res.Λ
 
-        K_supplied = compute_moments(hh, env).K_supplied
+        K_supplied = compute_moments(hh, Λ, env).K_supplied
         global K_err = abs(K_supplied - K) / K
         push!(residual_history, K_err)
         global iters += 1
 
-        @printf "  iter %d: K = %.4f → K_supplied = %.4f, K_err = %.6f, VFI %d / Λ %d\n" iters K K_supplied K_err res.vfi_iters res.lambda_iters
+        @printf "  iter %d: K = %.4f → K_supplied = %.4f, K_err = %.6f, VFI %d / Λ %d\n" iters K K_supplied K_err res.history.vfi_iters res.history.lambda_iters
 
         K_err <= rtol && break
 

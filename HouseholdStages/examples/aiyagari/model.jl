@@ -5,7 +5,7 @@
 # Smallest end-to-end exercise of the HouseholdStages package. The
 # within-period problem decomposes into three stages, in time order:
 #
-#     IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage
+#     IncomeShock ∘ IncomeReceipt ∘ ConsumptionSavingsStage
 #
 # (the canonical L03 / L04 decomposition.) `IncomeShock` resolves the
 # Markov draw on the income axis. `IncomeReceipt` is a deterministic
@@ -61,8 +61,8 @@ u_crra(c, valσ::Val) = c < 0 ? -Inf : _u_crra(c, valσ)
 #--------------------------#
 
 """
-Build the moment-lifted Aiyagari household block
-`IncomeShock ∘ₛ IncomeReceipt ∘ₛ ConsumptionSavingsStage` with the
+Build the moment-attached Aiyagari household block
+`IncomeShock ∘ IncomeReceipt ∘ ConsumptionSavingsStage` with the
 `K_supplied = ∫ wealth dΛ` moment attached. The wealth-axis log grid
 and the three-stage layout are inlined here.
 """
@@ -85,7 +85,8 @@ function aiyagari_household(p = aiyagari_params)
         monotone_search = :divide_conquer,
     )
 
-    return lift_moments(shock ∘ₛ receipt ∘ₛ savings;
+    hh = shock ∘ receipt ∘ savings
+    return define_moments!(hh;
         K_supplied = at_end(integrand = :wealth, reduce = sum),
     )
 end

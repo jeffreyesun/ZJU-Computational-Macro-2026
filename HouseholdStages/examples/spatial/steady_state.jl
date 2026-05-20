@@ -24,8 +24,7 @@ function spatial_steady_state(; p = params,
                                 tol::Float64        = 0.25,
                                 maxiter::Int        = 120,
                                 verbosity::Int      = 1)
-    hh      = spatial_household(p)
-    buffers = allocate(hh)
+    hh = spatial_household(p)
 
     K_home, K_abroad = K_home_0, K_abroad_0
     iterations = 0
@@ -40,11 +39,11 @@ function spatial_steady_state(; p = params,
         env = (; K_home, K_abroad, pr.r_home, pr.w_home, pr.r_abroad, pr.w_abroad)
 
         res = isnothing(V) ?
-            solve_steady_state_given_env!(hh, env, buffers) :
-            solve_steady_state_given_env!(hh, env, buffers;
+            solve_steady_state_given_env!(hh, env) :
+            solve_steady_state_given_env!(hh, env;
                                           V_init = V, Λ_init = Λ)
-        (; V, Λ, vfi_iters, lambda_iters) = res
-        moments = compute_moments(hh, env)
+        (; V, Λ, history) = res; (; vfi_iters, lambda_iters) = history
+        moments = compute_moments(hh, Λ, env)
 
         res_h = moments.K_home   - K_home
         res_a = moments.K_abroad - K_abroad
