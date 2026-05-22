@@ -1,0 +1,514 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../../_shared/preamble.tex}
+
+\usepackage{fontspec}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+% Chinese support via xeCJK with Noto CJK fonts.
+\usepackage{xeCJK}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+% Composition operator: ∘ with subscript s. Same convention as L05.
+\newcommand{\circs}{\mathbin{\circ_s}}
+
+\title{第六讲：空间异质性与校准}
+\subtitle{异质性主体宏观经济学的计算方法}
+\author{孙杰}
+\institute{多伦多大学}
+\date{2026年5月18日}
+
+\begin{document}
+
+\maketitle
+
+% =============================================================
+\section[空间 Aiyagari 模型]{空间 Aiyagari 模型}
+% =============================================================
+
+\begin{frame}{设定：三个区位}
+
+\begin{itemize}
+  \item 三个区位 \texttt{loc1}、\texttt{loc2}、\texttt{loc3}。
+  \item 每个区位生产\textbf{同一种单一商品}：一种可无成本交易、完全可替代的计价品（numeraire）。
+  \item 每个区位有各自的\textbf{生产率}（productivity）$A_j$：$A_1 > A_2 > A_3$。
+  \item 本地生产函数：$Y_j = A_j K_j^{\alpha} L_j^{1-\alpha}$。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{家庭}
+
+\begin{itemize}
+  \item 每个家庭拥有一单位非弹性劳动。
+  \item 本期\textbf{状态}：$(b, j)$ --- 财富 + 当前区位。
+  \item \textbf{没有}特异性收入冲击。在区位 $j$ 内部，每个家庭都赚取 $w_j$。
+  \item 所有的异质性都体现在 $(b, j)$ 上。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{单一债券市场}
+
+\begin{itemize}
+  \item \textbf{单一资产}，可在三个区位之间以及与世界其他地区之间自由交易。
+  \item 资本自由流动 $\Rightarrow$ \textbf{资本边际产出（MPK）均等化}：$r + \delta = \alpha A_j (L_j / K_j)^{1 - \alpha}$。
+  \item 工资相应调整：$w_j = (1 - \alpha) A_j \left( \frac{\alpha A_j}{r + \delta} \right)^{\alpha / (1 - \alpha)}$。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{$r$ 从何而来？}
+
+\begin{itemize}
+  \item \textbf{小型开放经济}（small open economy）。本国在世界债券市场中是\emph{小}的 $\Rightarrow$ $r$ 视为给定的外生量（$r = 0.03$）。
+  \item \textbf{为什么今天用外生 $r$？}没有特异性收入冲击时，家庭储蓄动机较弱；内生的 $r$ 会停留在储蓄边界 $1/\beta - 1$ 上。外生 $r$ 让我们可以专注于\textbf{迁移与校准}，避免债券市场的脆弱性。
+  \item \textbf{权衡}：资产市场是退化的；但其他一切都得到了干净的处理。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{期内链条}
+
+\begin{enumerate}
+  \item \textbf{迁移}（migration）。在目的地集合上抽取 Gumbel 偏好冲击。选择 $j'$，支付成本 $C[j, j']$，获得便利度奖励 $\alpha_{j'}$。
+  \item \textbf{财富更新}。到达目的地 $j'$ 后：$b' \gets (1 + r) b + w_{j'}$。
+  \item \textbf{消费/储蓄}。选择下一期财富。
+\end{enumerate}
+
+\vspace{0.5em}
+
+链条（紧凑形式）：
+\[
+\text{Migr.} \circs \text{WealthCh.} \circs \text{ConsSav.}
+\]
+
+\end{frame}
+
+\begin{frame}{我们想知道什么}
+
+\textbf{稳态对象：}
+
+\begin{itemize}
+  \item 各区位的人口份额 $s_j$。
+  \item 财富分布 $\Lambda(b, j)$（联合分布）。
+  \item 总量 $K_{\text{total}} = \sum_b b\, \Lambda(b, \cdot)$。
+  \item 值函数 $V(b, j)$。
+\end{itemize}
+
+\vspace{0.3em}
+
+价格 $(r, w)$ —— 其中 $w = (w_1, w_2, w_3)$ —— 在求解家庭问题之前就已确定。
+
+\end{frame}
+
+% =============================================================
+\section[MigrationStage]{MigrationStage}
+% =============================================================
+
+\begin{frame}{Gumbel 选择问题}
+
+在出发地 $i$，每个目的地的收益为
+\[
+u_{ij} = -C[i, j] + \alpha_j + V_{\text{end}}(j, b),
+\]
+
+\begin{itemize}
+  \item 再加上一个特异性的 \textbf{Gumbel 偏好冲击} $\varepsilon_j \sim \text{EV1}$（在 $j$ 上独立同分布）。
+  \item 家庭选择 $j^\star = \arg\max_j \big( u_{ij} + \eta \cdot \varepsilon_j \big)$，其中 $\eta$ 是冲击的\textbf{尺度}（scale）。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{对数-求和-指数公式}
+
+\begin{itemize}
+  \item 当 $\varepsilon_j \sim \text{EV1}$ 时，有两个经典结论：
+  \item \textbf{(a) 选择概率服从 logit 形式：}
+\end{itemize}
+
+\[
+\Pr(j \mid i, b) = \frac{\exp(u_{ij} / \eta)}{\sum_k \exp(u_{ik} / \eta)}.
+\]
+
+\textbf{(b) 期望值就是包容值（inclusive value）：}
+\[
+\E\Big[\max_j (u_{ij} + \eta \cdot \varepsilon_j)\Big] = \eta \log \sum_k \exp\!\big(u_{ik} / \eta \big).
+\]
+
+\end{frame}
+
+\begin{frame}{为什么 log-sum-exp 重要}
+
+\begin{itemize}
+  \item $\max$ 非光滑，在并列点不可微。
+  \item $\eta \log \sum \exp(\cdot / \eta)$ 关于其自变量是\textbf{光滑}的。
+  \item 当 $\eta \to 0$：退化为 $\max$（argmax 胜出）。
+  \item 当 $\eta \to \infty$：所有选项等概率（随机分配）。
+  \item $\eta$ 是\textbf{光滑化}/偏好噪声参数。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{\texttt{MigrationStage} 核心}
+
+\textbf{后向传递（计算 $V_{\text{pre}}$）：}
+\[
+V_{\text{pre}}(b, i) = \eta \log \sum_j \exp\!\frac{- C[i,j] + \alpha_j + V_{\text{end}}(b, j)}{\eta}.
+\]
+
+\textbf{前向传递（推动 $\Lambda$）：}
+\[
+\Lambda_{\text{post}}(b, j) = \sum_i \Pr(j \mid i, b)\, \Lambda_{\text{pre}}(b, i).
+\]
+
+\vspace{0.4em}
+
+与静态 logit 是同一个核，通过 V/$\Lambda$ 对偶性穿过整个链条。
+
+\end{frame}
+
+\begin{frame}[fragile]{API}
+\begin{lstlisting}
+migration = MigrationStage(layout;
+    migration_cost = C,                         # (n_loc, n_loc) origin → dest
+    amenity        = (dest; env) -> env.α[loc_idx(dest)],
+    ε              = p.η_logit,                 # Gumbel scale η
+)
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item 成本是一个静态矩阵；便利度闭包在每次后向传递时从 \texttt{env} 上读取 $\alpha$。
+  \item 希腊字母关键字 \texttt{ε} 是该 stage 对 Gumbel 尺度的命名；我们把 \texttt{p.η\_logit} 传进去。
+  \item Stage 自行分配 $(\text{cells}, n_{\text{loc}})$ 的概率张量。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{偏好平移项 $\alpha_j$}
+
+每个目的地的效用加项 $\alpha_j$ 以加法方式进入迁移收益：
+\[
+u_{ij} = -C[i, j] + \alpha_j + V_{\text{end}}(j, b).
+\]
+
+\vspace{0.3em}
+
+\begin{itemize}
+  \item $\alpha = (\alpha_1, \alpha_2, \alpha_3)$ 存放在 \texttt{env} 上（而非 Spec 上），因此我们只需重建 \texttt{env} 即可改变它。归一化 $\alpha_1 \equiv 0$（只有差值可识别）。
+  \item 第 5 节的校准循环将在 $\alpha$ 上迭代，以匹配观测到的份额。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{家庭模块的代码}
+\begin{lstlisting}
+layout = StateLayout(
+    StateAxis(:wealth,   continuous_grid(0, 25; length=250, spacing=:log)),
+    StateAxis(:location, categorical(collect(LOC_NAMES))))
+
+amenity = (dest; env) -> env.α[loc_idx(dest)]
+migration = MigrationStage(layout; migration_cost=p.C_base, amenity, ε=p.η_logit)
+income = WealthChangeStage(layout; wealth_post=function(cell; env)
+    return (1 + env.r) * cell.wealth + env.w[loc_idx(cell.location)]
+end)
+savings = ConsumptionSavingsStage(layout; β=p.β,
+    utility=(cell, c; env) -> u_crra(c, Val(p.σ)))
+
+hh = migration ∘ income ∘ savings
+define_moments!(hh;
+    K_total = at_end(integrand=(cell; env) -> cell.wealth, reduce=sum),
+    L       = at_end(integrand=(cell; env) -> Float64[cell.location == j for j in LOC_NAMES], reduce=sum))
+\end{lstlisting}
+\end{frame}
+
+% =============================================================
+\section[稳态]{稳态}
+% =============================================================
+
+\begin{frame}{一种新的外循环}
+
+\begin{itemize}
+  \item 第 4 讲：在 $\bar K$ 上的外循环（Aiyagari 市场出清）。
+  \item 第 5 讲：在路径 $\{K_t\}$ 上的外循环（转移动态）。
+  \item \textbf{第 6 讲：在 $\alpha$ 上的外循环（校准）。}$r$ 是外生的；$w_j(r, A_j)$ 有闭式解。外循环用于匹配人口份额。
+  \item 外循环的每一步就是一次 \texttt{solve\_steady\_state\_given\_env!} 调用。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{内循环求解}
+\begin{lstlisting}
+function solve_household(hh, p, α; V_init=nothing, Λ_init=nothing)
+    env = make_env(hh; r=p.r, w=spatial_wage.(p.r, p.A, p), α)
+    (;V, Λ, moments, history) = solve_steady_state_given_env!(hh, env; V_init, Λ_init)
+    shares = moments.L ./ sum(moments.L)
+    return (; V, Λ, env, moments, shares, history)
+end
+\end{lstlisting}
+
+\textbf{V} 在 \texttt{env} 下后向迭代至不动点，然后 \textbf{$\Lambda$} 前向迭代至平稳。最后读取矩。
+
+\end{frame}
+
+\begin{frame}{初始猜测 $\alpha = 0$ 下的示例运行}
+
+\emph{校准循环开始之前。}取 $r = 0.03$、$A = (1.20, 1.00, 0.85)$、$\alpha = (0, 0, 0)$：
+
+\begin{itemize}
+  \item 工资：$w = (1.66, 1.25, 0.97)$。
+  \item 份额：$(0.39, 0.37, 0.25)$。
+  \item $K_{\text{total}} = 0.75$。
+\end{itemize}
+
+\vspace{0.4em}
+
+在 $\alpha = 0$ 时，\texttt{loc1} 的高生产率使其成为最具吸引力的目的地；\texttt{loc3} 的低工资将人口推出。校准会修正这一点。
+
+\end{frame}
+
+\begin{frame}{跨区位读取 $V$}
+
+在固定财富 $b$ 下：
+\[
+V(b, j) \gtrless V(b, j')
+\]
+
+\begin{itemize}
+  \item 完全来自工资差异和成本结构 $C[i, j]$。
+  \item \textbf{迁移选择}来自比较在迁往 $j$ 后所隐含的财富 $b'$ 处的 $V_{\text{end}}(j, b')$。
+  \item （实现细节：\texttt{MigrationStage} 核填充 \texttt{choice\_prob}，一个 $(N_w, 3, 3)$ 张量。）
+\end{itemize}
+
+\end{frame}
+
+% =============================================================
+\section[校准]{校准}
+% =============================================================
+
+\begin{frame}{校准（calibration）：模型与数据相遇}
+
+\begin{itemize}
+  \item \textbf{熟悉的例子（第 4 讲）：}选择 $\beta$ 使模型的 $K/Y$ 匹配数据中的 $K/Y$。一个参数，一个矩。
+  \item \textbf{今天：}选择\textbf{偏好平移项} $\alpha = (\alpha_1, \alpha_2, \alpha_3)$，使模型的\textbf{人口份额}匹配数据中的份额。
+  \item 三个参数，三个矩。（归一化 $\alpha_1 = 0$ 留下两个自由度；份额加总为 1 留下两个约束。）
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{我们要匹配的数据}
+
+\textbf{合成目标：}
+\[
+s^{\text{data}} = (0.30,\ 0.30,\ 0.40).
+\]
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item 数据显示 \texttt{loc3} 容纳了 \emph{40\%} 的家庭 —— 尽管它的生产率（与工资）\emph{最低}。
+  \item \textbf{某种东西把人留在 \texttt{loc3}}，而 $\alpha = 0$ 的模型看不到它：一种``便利度''（amenity），一种对 \texttt{loc3} 的非金钱偏好。平移项 $\alpha_3$ 将对其进行量化。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{静态直觉}
+
+在一个\textbf{静态}多项 logit 模型中，确定性效用为 $\delta_j$：
+\[
+s_j = \frac{\exp(\delta_j / \eta)}{\sum_k \exp(\delta_k / \eta)}.
+\]
+
+\textbf{取对数差：}
+\[
+\log s_j - \log s_{j'} = \frac{\delta_j - \delta_{j'}}{\eta}.
+\]
+
+如果 $\delta_j$ 以加法形式包含 $\alpha_j$，那么我们可以直接从观测到的对数份额差中恢复 $\alpha_j - \alpha_{j'}$。
+
+\end{frame}
+
+\begin{frame}{阻尼对数份额更新}
+
+静态公式启发了 $\alpha$ 上的一个阻尼更新：
+\[
+\alpha_j^{(k+1)} = \alpha_j^{(k)} + s \cdot \eta \cdot \bigl( \log s_j^{\text{data}} - \log s_j^{\text{model}, (k)} \bigr),
+\]
+其中更新步长 $s \in (0, 1]$。在我们的\emph{动态}模型中，$V$ 也依赖于 $\alpha$，因此这并不是精确的反演 —— 但它仍是一个经验上保守、具有几何收敛性的不动点迭代。
+
+\end{frame}
+
+\begin{frame}{为什么这是``间接的''}
+
+\begin{itemize}
+  \item \textbf{直接推断（direct inference）：}从数据中直接读出参数。我们做不到 —— 我们在任何数据集中都观测不到 $\alpha_j$。
+  \item \textbf{间接推断（indirect inference，广义）：}以\emph{模型}作为翻译器：观测份额（我们有），通过匹配反推出 $\alpha$（我们没有）。
+  \item \textbf{注。}严格意义上的 Gourieroux--Monfort--Renault (1993) 使用辅助模型。宏观经济学中对该术语的用法较为宽松；这里我们采用宽松的用法。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{校准循环}
+
+\begin{enumerate}
+  \item 初始化 $\alpha^{(0)} = 0$。
+  \item 在 $\alpha^{(k)}$ 下\textbf{求解家庭问题}。得到 $s^{\text{model}, (k)}$。
+  \item 计算偏差 $g_j = \log s_j^{\text{data}} - \log s_j^{\text{model}, (k)}$。
+  \item 若 $\| g \|_\infty < \text{tol}$，\textbf{停止}。
+  \item 更新 $\alpha^{(k+1)} = \alpha^{(k)} + s \cdot \eta \cdot g$，并归一化 $\alpha_1 = 0$。
+  \item 重复。
+\end{enumerate}
+
+\end{frame}
+
+\begin{frame}[fragile]{代码}
+\begin{lstlisting}
+function calibrate_shifters!(hh, p, s_data; verbosity=1)
+    update_speed = 0.1;  tol = 5e-3;  maxiter = 60
+    α = Float64[0.0, p.α_init[1], p.α_init[2]];  V, Λ = nothing, nothing
+    for k in 1:maxiter
+        out = solve_household(hh, p, α; V_init=V, Λ_init=Λ);  (;V, Λ) = out
+        gap = log.(s_data) .- log.(max.(out.shares, 1e-8))
+        maximum(abs.(gap)) < tol && return (; α, k, out...)
+        α .+= update_speed * p.η_logit .* gap;   α .-= α[1]   # update + normalize
+    end
+end
+\end{lstlisting}
+
+\end{frame}
+
+\begin{frame}{运行结果}
+
+\textbf{迭代日志}（节选，$s = 0.1$）：
+
+\begin{itemize}
+  \item 第 1 次迭代：份额 (0.387, 0.365, 0.248)；$\alpha = 0$。
+  \item 第 8 次迭代：份额 (0.327, 0.329, 0.343)；$\alpha = (0, 0.024, 0.504)$。
+  \item 第 16 次迭代：份额 (0.306, 0.311, 0.383)；$\alpha = (0, 0.010, 0.678)$。
+  \item 第 32 次迭代：份额 (0.300, 0.301, 0.398)；$\alpha = (0, -0.011, 0.737)$。\textbf{完成。}
+\end{itemize}
+
+\vspace{0.4em}
+
+32 次迭代后收敛。对数份额偏差呈几何收敛。
+
+\end{frame}
+
+\begin{frame}{解读校准得到的 $\alpha$}
+
+\begin{itemize}
+  \item $\alpha_1 = 0$（已归一化）。
+  \item $\alpha_2 \approx -0.011$：\texttt{loc2} 的 30\% 份额与纯工资模型一致。
+  \item $\alpha_3 \approx 0.737$：\texttt{loc3} 每期约有 $0.74$ 单位的未观测便利度效用。
+\end{itemize}
+
+\vspace{0.3em}
+
+$\alpha_3 \approx 0.74$ 正是间接识别（indirect identification）给出的那种推断：一个我们无法直接观察到的量的取值。
+
+\end{frame}
+
+\begin{frame}{如果数据中的份额不同呢？}
+
+\textbf{识别的比较静态。}
+
+\vspace{0.3em}
+
+\begin{itemize}
+  \item 如果 $s_3^{\text{data}}$ 从 0.40 上升到 0.45，$\alpha_3$ 会上升以保持模型与数据相符。
+  \item 如果 $s_3^{\text{data}}$ 下降到 0.20（低于纯工资模型的预测），$\alpha_3$ 将变为\emph{负值} —— 即一种纯工资模型无法捕捉的\emph{不}便利度。
+\end{itemize}
+
+\vspace{0.3em}
+
+推断出的 $\alpha$ \textbf{跟随数据}，而非模型的偏好。这就是它作为实证对象的有用之处。
+
+\end{frame}
+
+% =============================================================
+\section[扩展]{扩展}
+% =============================================================
+
+\begin{frame}{我们的模型作了哪些假设}
+
+我们假设了：
+\begin{enumerate}
+  \item \textbf{一种商品}，在各区位之间完全可替代。
+  \item 该商品的\textbf{贸易无成本}。
+  \item \textbf{资本自由}流动（单一的 $r$）。
+  \item \textbf{劳动自由}流动（须支付迁移成本）。
+\end{enumerate}
+
+\vspace{0.4em}
+
+这些假设都很强。空间经济学（spatial economics）就是在追踪：放松每一条会带来什么变化。
+
+\textbf{今天不写代码 —— 只讲思路。}
+
+\end{frame}
+
+\begin{frame}{变体 1：差异化商品（Armington）}
+
+每个区位的商品是一个\emph{独立的品种}；消费者偏好多样化（CES 加总）。
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item 贸易流动来源于对多样化的需求。
+  \item 本地价格 $p_j$ 各不相同；实际工资取决于本地价格指数。
+  \item 迁移对\emph{实际}工资作出反应。
+\end{itemize}
+
+\vspace{0.3em}
+
+这就是支撑现代贸易/空间经济学的 \textbf{Armington (1969)} 结构（Eaton--Kortum、Allen--Arkolakis）。
+
+\end{frame}
+
+\begin{frame}{变体 2：贸易成本}
+
+商品跨境并非免费：\textbf{冰山成本}（iceberg cost）$\tau_{ij} \geq 1$（必须发出 $\tau_{ij}$ 单位才能让 1 单位到达）。
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item 本地价格依赖于距离。
+  \item 一些商品成为不可贸易品（$\tau \to \infty$）：服务、住房。
+  \item 家庭消费可贸易品和不可贸易品的组合。
+  \item 迁移成本与贸易成本相互作用（地理上更近的区域往往两者都更低）。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{变体 3：受限的要素流动性}
+
+\begin{itemize}
+  \item \textbf{资本是本地的}（例如住房）。本地资本稀缺会推高本地租金和房价。
+  \item \textbf{迁移成本是沉没的且很大}。工人无法迅速使工资均等化；空间工资差异持续存在。
+  \item \textbf{技能异质性}。高技能与低技能工人面临不同的迁移选择 —— 一如现代城市经济学文献所述（Diamond 2016, Moretti 2011）。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{把碎片拼回去}
+
+每种变体都可以作为一个\emph{stage}或一个\emph{模块级扩展}插入链条：
+
+\vspace{0.3em}
+
+\begin{itemize}
+  \item Armington/不可贸易品 $\Rightarrow$ \emph{改变} env（添加 $p_j$、实际工资）。
+  \item 本地住房 $\Rightarrow$ \emph{增加一个轴}（住房）和一个 stage。
+  \item 技能异质性 $\Rightarrow$ \emph{增加一个轴}（技能）以及以其为键的 stage 闭包。
+\end{itemize}
+
+\end{frame}
+
+\end{document}

@@ -1,0 +1,437 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../../_shared/preamble.tex}
+
+\usepackage{fontspec}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+% DejaVu Sans Mono (not Latin Modern Mono) for the monospace face because
+% LM Mono lacks Greek glyphs — β/γ inside lstlisting and \texttt{} would be
+% silently dropped otherwise.
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+% Chinese support via xeCJK with Noto CJK fonts.
+\usepackage{xeCJK}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+% Composition operator: ∘ with a subscript s. Used informally as the
+% Julia-package name `∘ₛ` but we typeset it as math \circ_s.
+\newcommand{\circs}{\mathbin{\circ_s}}
+
+\title{第五讲：预期——转移动态（Transition Dynamics）}
+\subtitle{异质性主体宏观经济学的计算方法}
+\author{孙杰}
+\institute{多伦多大学}
+\date{2026年5月15日}
+
+\begin{document}
+
+\maketitle
+
+% =============================================================
+\section[HouseholdStages]{HouseholdStages}
+% =============================================================
+
+\begin{frame}{HouseholdStages}
+  \begin{itemize}
+    \item 一个用于构建异质性主体宏观模型家庭模块的阶段（Stages）实现。
+    \item Auclert--Bardóczy--Rognlie--Straub 的 \textbf{SSJ toolkit}（Python）也有阶段实现。
+    \item Econ-ARK 也有某种形式的 Stages。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{这个包提供了什么}
+  \begin{itemize}
+    \item \textbf{阶段实现。} \texttt{MarkovStage}、\texttt{WealthChangeStage}、\texttt{ConsumptionSavingsStage}、\texttt{LogitChoiceStage}、\texttt{MigrationStage}、\texttt{BorrowingConstraintStage}、\texttt{AssetPriceChangeStage} $\dots$
+    \item \textbf{组合（Composition）。} \texttt{$\circ$} 把 Stages 串接起来；\texttt{lift\_moments} 附加积分。
+    \item \textbf{内层求解辅助函数。} 在给定 env（价格与参数）下求稳态以及转移路径上的 $V$、$\Lambda$。
+    \item \textbf{函子化提升（Functorial lifts）。} \texttt{lift\_jacobian}（自动微分）、\texttt{lift\_gpu}。
+    \item \textbf{SSJ 工具。} 序列空间雅可比（sequence-space Jacobian）（在 L6+ 中讲解）。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{这个包\emph{不}做什么}
+  这个库处理\textbf{给定 env 下的家庭模块}。它\emph{不}：
+  \begin{itemize}
+    \item 决定你的总量状态。
+    \item 由 $\bar K$ 计算价格（厂商模块）。
+    \item 运行用于校准或市场出清的外循环。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{为什么这样切分}
+  \begin{itemize}
+    \item 家庭模块：在所有 HA 模型中\textbf{通用的组件}。
+    \item 均衡、校准、转移：\textbf{模型特定的}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{稳态内层求解辅助函数}
+  \begin{lstlisting}
+  # V backward to a fixed point at fixed env.
+  solve_vfi_steady_state_given_env!(hh, env)
+
+  # Λ forward to stationarity using the policy populated by the backward sweep.
+  solve_lambda_steady_state_given_env!(hh)
+
+  # Bundle of the two: V then Λ, plus attached moments.
+  solve_steady_state_given_env!(hh, env)
+  \end{lstlisting}
+  这三个函数都把 \texttt{env} \textbf{当作给定}。它们对家庭模块做迭代，但不更新价格或参数。
+\end{frame}
+
+% =============================================================
+\section{Aiyagari 稳态的阶段实现}
+% =============================================================
+
+\begin{frame}{与之前相同的模型}
+  \begin{itemize}
+    \item \textbf{阶段链}（时间顺序）：\[ \text{z\_shock} \circs \text{income} \circs \text{savings}. \]
+    \item \textbf{厂商。} Cobb-Douglas，劳动 $L$ 固定。
+    \item \textbf{均衡。} $\bar K = \bar K^{\mathrm{supplied}}(\bar K)$。
+    \item \textbf{外循环。} 对 $\bar K$ 做带阻尼的\textbf{试错调整}（tatonnement）。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{状态布局}
+  \begin{lstlisting}
+  layout = StateLayout(
+      StateAxis(:wealth, continuous_grid(0, 100; length=400, spacing=:log)),
+      StateAxis(:z,      [0.6, 1.0, 1.4]),
+  )
+  \end{lstlisting}
+  \begin{itemize}
+    \item \textbf{wealth}（连续，400 点对数网格）。
+    \item \textbf{z}（生产率；离散，3 个水平）。
+    \item 闭包读取 \texttt{cell.wealth}、\texttt{cell.z}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{阶段 1：$z$ 冲击}
+  \begin{lstlisting}
+  z_shock = MarkovStage(layout; axis=:z, transition=P_z)
+  \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{阶段 2：收入}
+  \begin{lstlisting}
+  income = WealthChangeStage(layout;
+      wealth_post = (cell; env) ->
+          (1 + env.r) * cell.wealth + env.w * cell.z,
+  )
+  \end{lstlisting}
+  \begin{itemize}
+    \item 前面的例子把结果对齐到网格上。库函数则做连续的再插值。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{阶段 3：消费——储蓄}
+  \begin{lstlisting}
+  savings = ConsumptionSavingsStage(layout; β=0.96,
+      utility=(cell, c; env) -> c < 0 ? -Inf : log(c),
+      monotone_search=:divide_conquer,
+  )
+  \end{lstlisting}
+  \begin{itemize}
+    \item \texttt{:divide\_conquer}：当策略关于 $b$ 单调时，使用更快的 $O(N \log N)$ 算法。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{组合}
+  \begin{lstlisting}
+  hh = z_shock ∘ income ∘ savings
+  \end{lstlisting}
+  \begin{itemize}
+    \item \texttt{$\circ$} 按时间顺序组合 Stages。
+    \item 家庭模块\emph{本身就是一个 Stage}：有自己的 \texttt{backward!} 和 \texttt{forward!}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{定义矩}
+  \begin{lstlisting}
+  hh = define_moments!(hh;
+      K_supplied=at_end(integrand=:wealth, reduce=sum),
+  )
+  \end{lstlisting}
+  \begin{itemize}
+    \item \texttt{define\_moments!}：在 $\Lambda$ 上定义积分。这里 $K^{\mathrm{supplied}} = \int b\,\mathrm{d}\Lambda^\text{end}$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{在给定 $\bar K$ 下求稳态}
+  \begin{lstlisting}
+  env = make_env(hh; aiyagari_prices(K, p)...)        # (r, w)
+  res = solve_steady_state_given_env!(hh, env)
+  K_supplied = res.moments.K_supplied
+  \end{lstlisting}
+  \begin{itemize}
+    \item \textbf{第 1 行。} 构造 env：$(K, r, w)$。
+    \item \textbf{第 2 行。} 求稳态的 $V$ 与 $\Lambda$。
+    \item \textbf{第 3 行。} 读出 $K^{\mathrm{supplied}}$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{外层试错调整循环}
+  \begin{lstlisting}
+  K = 5.0
+  for it in 1:max_iter
+      env = make_env(hh; aiyagari_prices(K, p)...)
+      (; V, Λ, moments) = solve_steady_state_given_env!(hh, env)
+      K_supplied = moments.K_supplied
+      K_err = abs(K_supplied - K) / K
+      K_err <= rtol && break
+      K += update_speed * (K_supplied - K)        # damped tatonnement
+  end
+  \end{lstlisting}
+  每一轮：$\bar{K} \to R \to V,\Lambda \to K^{\mathrm{supplied}} \to K\_\text{err}$，再更新 $\bar K$。
+
+  当 $|K_\mathrm{err}| / K < $\texttt{rtol} 时停止。
+\end{frame}
+
+% =============================================================
+\section[比较静态]{比较静态}
+% =============================================================
+
+\begin{frame}{比较静态}
+  改变一个参数，重新求解稳态。
+
+  可以把它理解为对冲击的\textbf{长期}响应。
+
+  在示例校准中：
+  \begin{itemize}
+    \item $A = 1$ → $\bar K_{\mathrm{pre}} = 5.68$，$\bar R_{\mathrm{pre}} = 0.038$。
+    \item $A = 1.05$ → $\bar K_{\mathrm{post}} = 6.14$，$\bar R_{\mathrm{post}} = 0.038$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{比较静态}
+  比较静态告诉你冲击的\textbf{长期}响应。
+
+  但它没告诉你：
+  \begin{itemize}
+    \item 转移的速度
+    \item 转移的路径
+    \item 冲击发生时在世个体所受的福利影响。
+  \end{itemize}
+
+  要回答这些问题，就需要转移动态。
+\end{frame}
+
+% =============================================================
+\section[转移动态]{转移动态}
+% =============================================================
+
+\begin{frame}{转移动态}
+  \begin{itemize}
+    \item \textbf{稳态。} 单一的 $(K, V, \Lambda)$。不随时间变化。
+    \item \textbf{转移。} 一条序列 $\{(K_t, V_t, \Lambda_t)\}_{t = 1,\dots,T}$。经济正在\emph{运动}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{MIT 冲击（MIT shock）}
+  在 $t = 1$ 时发生的\textbf{永久性、未预期到的}冲击。
+  \begin{itemize}
+    \item $t = 0$：处于稳态。
+    \item $t = 1$：参数永久性改变。主体感到\emph{意外}。
+    \item $t \geq 1$：对所有外生与内生变量的整条未来路径具有\emph{完全预见}（perfect foresight）。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{例：TFP 冲击}
+  在 $t = 1$ 时发生的\emph{永久性}正向 TFP 冲击：
+  \[
+    A_t = 1.05 \quad \text{for all } t \geq 1, \quad A_0 = 1.
+  \]
+  \begin{itemize}
+    \item \emph{唯一}的外生变化。
+    \item $\{r_t, w_t, K_t, V_t, \Lambda_t\}$ 作为\textbf{响应}发生变化。
+    \item 取 $T = 100$，并令 $V_{T+1} = V^\text{new\_steady\_state}$ 以闭合模型。
+  \end{itemize}
+\end{frame}
+
+% =============================================================
+\section[求解 MIT 转移]{求解 MIT 转移}
+% =============================================================
+
+\begin{frame}{问题陈述}
+  \begin{itemize}
+    \item \textbf{已知：} $\{A_t\}_{t = 1}^T$。
+    \item \textbf{求：} $\{K_t, V_t, \Lambda_t\}$，使得
+  \end{itemize}
+  \begin{itemize}
+    \item $V_{T+1} = V_{\mathrm{ss}}$（终端条件）。
+    \item $\Lambda_1 = \Lambda_{\mathrm{ss}}$（初始条件）。
+    \item $V_t = \text{backward}(V_{t+1}, K_t, A_t)$。
+    \item $\Lambda_{t+1} = \text{forward}(\Lambda_t, V_{t+1})$。
+    \item 市场出清：$K_t = K_t^{\mathrm{supplied}}$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{算法}
+
+\textbf{1. 猜测路径 $\{K_t\}$。}
+
+\textbf{2. 反向迭代 $V$。}
+\[
+  V_{T+1} \leftarrow V_{\mathrm{ss}^{\mathrm{post}}}, \quad V_t = \text{backward}(V_{t+1}, K_t, A_t).
+\]
+
+\textbf{3. 正向模拟 $\Lambda$。}
+\[
+  \Lambda_1 \leftarrow \Lambda_{\mathrm{ss}^{\mathrm{pre}}}, \quad \Lambda_{t+1} = \text{forward}(\Lambda_t, V_{t+1}).
+\]
+
+\textbf{4. 更新 $K_{\mathrm{path}}$。}
+\[
+  K_t \leftarrow (1 - s)\,K_t + s\,K_t^{\mathrm{supplied}}.
+\]
+
+\end{frame}
+
+\begin{frame}{说明：求根}
+  归根到底，问题就是在序列空间中求超额需求函数的根：
+  \[
+    \text{excess\_demand}(\{K_t\}) = \vec{0}.
+  \]
+  为演示起见，我们使用简单而稳健的试错调整法。
+
+  使用序列空间雅可比（sequence-space Jacobian）的梯度方法可以快得多。
+\end{frame}
+
+\begin{frame}[fragile]{算法}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+hh_path = [aiyagari_household(p_new) for _ in 1:T]   # one chain per period
+K_path = fill(K_ss, T)                               # initial guess
+V_path[T+1] .= V_ss; Λ_path[1] .= Λ_ss               # boundary conditions
+while res > tol
+    env_path = [make_env(hh_path[t]; aiyagari_prices(K_path[t], p_new)...) for t in 1:T]
+    for t in T:-1:1                                  # backward sweep
+        copyto!(V_path[t], backward!(hh_path[t], V_path[t+1], env_path[t]))
+    end
+    for t in 1:T                                     # forward sweep
+        copyto!( Λ_path[t+1], forward!(hh_path[t], Λ_path[t]))
+        K_supplied[t] = compute_moments(hh_path[t], Λ_path[t+1], env_path[t]).K_supplied
+    end
+    res = maximum(abs, K_supplied .- K_path)
+    K_path .= (1 - update_speed) .* K_path .+ update_speed .* K_supplied   # damped tatonnement
+end
+\end{lstlisting}
+\end{frame}
+
+% =============================================================
+\section[实现]{实现}
+% =============================================================
+
+\begin{frame}{初始稳态}
+
+\textbf{我们需要：}
+
+\begin{itemize}
+  \item $V_{\mathrm{ss}}$：反向扫描的终端值。
+  \item $\Lambda_{\mathrm{ss}}$：正向扫描的初始值。
+\end{itemize}
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item 第 2 节的试错调整就能同时给出这两者。
+  \item \textbf{初始化：} $V_{\mathrm{ss}} \to V_\mathrm{path}[T+1]$；$\Lambda_{\mathrm{ss}} \to \Lambda_\mathrm{path}[1]$；初始的 $\{K_t\} \equiv K_{\mathrm{ss}}$。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{反向扫描}
+\begin{lstlisting}
+for t in T:-1:1
+    env_t = make_env(hh_path[t]; aiyagari_prices(K_path[t], p_new)...)
+    copyto!(V_path[t], backward!(hh_path[t], V_path[t+1], env_t))
+end
+\end{lstlisting}
+
+\end{frame}
+
+\begin{frame}[fragile]{正向扫描（注意重新装载 kernels！）}
+\begin{lstlisting}
+for t in 1:T
+    env_t = make_env(hh_path[t]; aiyagari_prices(K_path[t], p_new)...)
+    copyto!( Λ_path[t+1], forward!(hh_path[t], Λ_path[t]))
+    K_supplied[t] = compute_moments(hh_path[t], Λ_path[t+1], env_t).K_supplied
+end
+\end{lstlisting}
+
+\end{frame}
+
+\begin{frame}[fragile]{外层试错调整更新}
+\begin{lstlisting}
+res = maximum(abs, K_supplied .- K_path)
+K_path .= (1 - update_speed) .* K_path .+ update_speed .* K_supplied
+\end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}{脉冲响应：资本}
+
+\textbf{形状。}
+
+\begin{itemize}
+  \item $\Delta A$ 推高 $r$。
+  \item 更高的 $r$ $\to$ 更多储蓄。
+  \item 更多储蓄 $\to$ 更高的 $K$ $\to$ 更低的 $r$。具有自我修正性。
+\end{itemize}
+
+\vspace{0.4em}
+
+\textbf{滞后。} 财富分布有惯性。$K$ 的峰值比 $A$ 的峰值滞后约 5 期。
+
+\end{frame}
+
+\begin{frame}{脉冲响应：$r_t$ 与 $w_t$}
+
+\textbf{$r_t$。}
+
+\begin{itemize}
+  \item 在冲击时点跳升（$A_1$ 先于 $K$ 变化）。
+  \item 当 $K$ 超调时跌至稳态以下。
+  \item 当 $A_t \to 1$ 时回到 $r_{\mathrm{ss}}$。
+\end{itemize}
+
+\textbf{$w_t$。}
+
+\begin{itemize}
+  \item 形状相同，符号相反。
+  \item 当 $K$ 超调时高于稳态。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{福利}
+
+\begin{itemize}
+  \item 富裕主体：在 $r$ 上获得短暂的资本收益。
+  \item 依赖工资的主体：吃到 $w$ 这一侧的好处。
+\end{itemize}
+
+\vspace{0.6em}
+
+对于 Aiyagari，我们能够逐期得到福利效应的\emph{一整个分布}。把两条渠道拆开来看，正是 MIT 冲击能让你做的事情之一。
+
+\end{frame}
+
+\begin{frame}{把 $T$ 取得足够大}
+
+\begin{itemize}
+  \item $T$ = 使得 $A_T \approx 1$ 且 $V_{T+1} = V_{\mathrm{ss}}$ 的视界。
+  \item 取太小 $\to$ 终端条件会污染整条路径。
+\end{itemize}
+
+\vspace{0.4em}
+
+\textbf{经验法则。} 取 $T$ 使得 $A_T - 1 < 10^{-3}$。在 $\rho = 0.85$、$A_0 = 1.05$ 下：$T \approx 25$。我们取 $T = 100$。
+
+\end{frame}
+
+\end{document}
