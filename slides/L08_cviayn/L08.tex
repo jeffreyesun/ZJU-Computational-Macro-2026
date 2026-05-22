@@ -1,0 +1,726 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+\lstset{basicstyle=\ttfamily\scriptsize}
+
+
+% TikZ for the within-period timing diagram.
+\usepackage{tikz}
+\usetikzlibrary{decorations.pathreplacing}
+
+\usepackage{fontspec}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+% Composition operator: ∘ with subscript s. Carried for legacy parity.
+\newcommand{\circs}{\mathbin{\circ_s}}
+
+% Continuation-value-is-all-you-need notation (matches
+% Neural_VFI_reference_description.tex, the upstream source of truth).
+\newcommand{\Vstart}{V^{\mathrm{start}}}
+\newcommand{\Vend}{V^{\mathrm{end}}}
+\newcommand{\Vstarttil}{\widetilde{V}^{\mathrm{start}}}
+\newcommand{\Vendtil}{\widetilde{V}^{\mathrm{end}}}
+\newcommand{\Vstarthat}{\widehat{V}^{\mathrm{start}}}
+\newcommand{\Vendhat}{\widehat{V}^{\mathrm{end}}}
+\newcommand{\Lstart}{\Lambda^{\mathrm{start}}}
+\newcommand{\Lend}{\Lambda^{\mathrm{end}}}
+\newcommand{\xstart}{x^{\mathrm{start}}}
+\newcommand{\xend}{x^{\mathrm{end}}}
+\newcommand{\CV}{\mathcal{V}}
+\newcommand{\Lop}{\mathcal{L}}
+
+\title{Lecture 8: Continuation Value is All You Need}
+\subtitle{Computational Methods for Heterogeneous-Agent Macro}
+\author{Jeffrey Sun}
+\institute{University of Toronto}
+\date{May 20, 2026}
+
+\begin{document}
+
+\maketitle
+
+% =============================================================
+\section[nVFI]{Neural Value Function Iteration (nVFI)}
+% =============================================================
+
+\begin{frame}{Neural Value Function Iteration (nVFI)}
+  Broadly:
+  \begin{enumerate}
+    \item Parameterize $V^\text{end}(x^\text{end}, \Lambda^\text{start})$ using a neural network with params $\theta$
+    \item Sample from $\Lambda^\text{end}$ (somehow)
+    \item For each $\Lambda^\text{end}$ compute the \textbf{outer Bellman residual} (to be defined)
+    \item Update $\theta$ and repeat from Step 2 until convergence
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}{Outer Bellman Residual}
+  Consider the Krusell-Smith model.
+
+  Let $\Vendhat_\theta(x^\text{end}; \Lambda^\text{end}, Z)$ be a $\theta$-parameterized neural network.
+
+  Informally, we want to satisfy as closely as possible,
+  \[
+    \Vendhat_\theta(\xend; \Lstart, Z) - \E_{Z'}\psq{\Vstarthat\p{\xend; \Lstart{}', Z'}\mid Z} = 0,
+  \]
+  w/ $\Vstarthat(\xend;\Lstart{}',Z')$ given by simulating forward, then iterating backward, given $\Vendhat_\theta, Z'$.
+\end{frame}
+
+% =============================================================
+\section[Conventions]{Conventions and Timing}
+% =============================================================
+
+\begin{frame}{Conventions}
+  \begin{enumerate}
+    \item Household states do not change between household periods:
+    \[
+      \xend_{it} = \xstart_{i,t+1},\quad\text{and}\quad\Lend_{it} = \Lstart_{i,t+1}.
+    \]
+    \item Aggregate shocks occur \textbf{between} household periods
+    \begin{itemize}
+      \item i.e. between $\Vend(\xend; \Lstart, Z)$ and $\Vstart(\xstart; \Lstart{}', Z')$
+    \end{itemize}
+    \item A value function \textbf{slice} or \textbf{guess} depending only on \textbf{idiosyncratic} state is denoted by tilde,
+    \[
+      \Vstarttil(\xstart), \quad\text{but}\quad \Vstart(\xstart; \Lstart, Z).
+    \]
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}{Within-Period Timeline: Steady State}
+  Recall the structure of timing within a period in the steady state version:
+
+  \vspace{0.4em}
+  {\centering
+  \begin{tikzpicture}[
+    every node/.style={font=\footnotesize},
+    decoration={brace, mirror, amplitude=4pt},
+    baseline,
+  ]
+    \def\W{12.4}                            % timeline width in cm
+    \pgfmathsetmacro{\seg}{\W/3}            % segment width
+
+    % main line
+    \draw[thick] (0, 0) -- (\W, 0);
+
+    % ticks
+    \foreach \i in {0, 1, 2, 3} {
+      \draw[thick] ({\i*\seg}, -0.13) -- ({\i*\seg}, 0.13);
+    }
+
+    % V expressions above each tick
+    \node[above=2pt, font=\scriptsize] at (0, 0.13)         {$V^{\mathrm{start}}(b^{\mathrm{end}}_{t-1},\, z^{\mathrm{end}}_{t-1})$};
+    \node[above=2pt, font=\scriptsize] at ({\seg}, 0.13)    {$V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}_{t-1},\, z_t)$};
+    \node[above=2pt, font=\scriptsize] at ({2*\seg}, 0.13)  {$V^{\mathrm{pre\_cons}}(b_t,\, z_t)$};
+    \node[above=2pt, font=\scriptsize] at (\W, 0.13)        {$V^{\mathrm{end}}(b^{\mathrm{end}}_t,\, z_t)$};
+
+    % "Beginning of period" annotation: a second row above tick 1
+    \node[above=14pt, font=\scriptsize\itshape, align=center] at (0, 0.13)
+      {Beginning of period};
+    \node[above=14pt, font=\scriptsize\itshape, align=center] at (\W, 0.13)
+      {End of period};
+
+    % underbraces below segments
+    \draw[decorate] (0.08, -0.13) -- ({\seg - 0.08}, -0.13);
+    \draw[decorate] ({\seg + 0.08}, -0.13) -- ({2*\seg - 0.08}, -0.13);
+    \draw[decorate] ({2*\seg + 0.08}, -0.13) -- ({\W - 0.08}, -0.13);
+
+    % stage labels under each underbrace
+    \node[below=12pt, align=center] at ({\seg/2}, -0.13)
+      {\textbf{Income shock}\\[1pt] $z_t \sim \Pi(\cdot \mid z^{\mathrm{end}}_{t-1})$};
+    \node[below=12pt, align=center] at ({\W/2}, -0.13)
+      {\textbf{Income}\\[1pt] $b_t = R\, b^{\mathrm{end}}_{t-1} + z_t$};
+    \node[below=12pt, align=center] at ({5*\seg/2}, -0.13)
+      {\textbf{Consumption-saving}\\[1pt] $b^{\mathrm{end}}_t = b_t - c^\star(b_t, z_t)$};
+  \end{tikzpicture}
+  }
+\end{frame}
+
+\begin{frame}{Within-Period Timeline: Global Solution}
+  With aggregate shocks, we rewrite (and simplify):
+
+  \vspace{0.4em}
+  {\centering
+  \begin{tikzpicture}[
+    every node/.style={font=\footnotesize},
+    decoration={brace, mirror, amplitude=4pt},
+    baseline,
+  ]
+    \def\W{8.0}                            % timeline width in cm
+    % main line
+    \draw[thick] (0, 0) -- (\W, 0);
+
+    % ticks
+    \draw[thick] (0, -0.13) -- (0, 0.13);
+    \draw[thick] (\W, -0.13) -- (\W, 0.13);
+
+    % V expressions above each tick
+    \node[above=2pt, font=\scriptsize, align=left] at (0, 0.13)         {\quad\ $\Vstarttil(\xstart)$\\ $\equiv\Vstart(\xstart; \Lstart, Z)$};
+    \node[above=2pt, font=\scriptsize, align=left] at (\W, 0.13)        {\quad\ $\Vendtil(\xend)$\\ $\equiv\Vend(\xend; \Lstart, Z)$};
+
+    % Lambda expressions below each tick
+    \node[below=12pt, font=\scriptsize] at (0, 0)         {$\Lstart$};
+    \node[below=12pt, font=\scriptsize] at (\W, 0)        {$\Lend$};
+
+    % underbraces below segments
+    \draw[decorate] (0.08, -0.13) -- ({\W - 0.08}, -0.13);
+
+    % stage labels under each underbrace
+    \node[below=12pt, align=center] at ({\W/2}, -0.13)
+      {\textbf{Household Period}};
+  \end{tikzpicture}
+  }
+
+  \vspace{1em}
+  In previous lectures, we learned how to map,
+  \begin{align*}
+    \p{\Vendtil, \Lstart, Z} &\mapsto \p{\Vstarttil, \Lend}.\\
+    \text{Let's call this}\quad   \Phi\p{\Vendtil, \Lstart, Z} &= \p{\Vstarttil, \Lend}.\hspace{8em}
+  \end{align*}
+\end{frame}
+
+\begin{frame}{Conventions: Dependence on $\Lstart$}
+  \begin{itemize}
+    \item The model is deterministic within the household period.
+    \item Thus, $\Lend$ is uniquely determined by $\Lstart$.
+    \item Thus, it is \textbf{theoretically valid} to write $\Vend(\xend; \Lstart, Z)$.
+    \item \textbf{Note:} I am \textbf{not} saying anything about how to compute or represent $\Vend$ on the computer yet!
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Conventions: Partial Application of $\Vend$}
+  \begin{itemize}
+    \item If we condition on $\Lstart$ and $Z$, then $\Vend$ is just a function of $\xstart$.
+    \item That is, fixing $\Lstart$ and $Z$, we can define,
+    \[
+      \Vendtil(\xend) \equiv \Vend(\xend; \Lstart, Z).
+    \]
+    \item In computer-science terms, this is a \textbf{partial application} of $\Vend$ at $(\Lstart, Z)$.
+    \item Let us write this as an operator taking a \textbf{function} to a \textbf{function}
+    \begin{align*}
+      &\CV: (\Lstart, Z) \mapsto \Vendtil \\
+      &\CV(\Lstart, Z)(\xend) \equiv \Vend(\xend; \Lstart, Z).
+    \end{align*}
+  \end{itemize}
+  My view is that the \textbf{continuation value operator} $\CV$ is a natural extension of the value function to HA models with aggregate shocks.
+\end{frame}
+
+% =============================================================
+\section[CVIAYN]{Continuation Value Is All You Need}
+% =============================================================
+
+\begin{frame}{Continuation Value Is All You Need}
+  Suppose we have a model, initial aggregate state $(\Lstart, Z)$.
+  
+  Suppose we also have the continuation value operator $\CV$. (This is the hard part.)
+
+  Then we can simulate the model forward:
+  \begin{enumerate}
+    \item $\Vendtil = \CV(\Lstart, Z)$
+    \item $(\Vstarttil, \Lend) = \Phi(\Vendtil, \Lstart, Z)$
+    \item Draw $Z' \sim \Pi(\cdot \mid Z)$
+    \item $(\Lstart{}', Z') = (\Lend, Z')$
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}{Recall: Typical Bellman Equation and Operator}
+  The typical Bellman equation defines $V$ via the relation,
+  \[
+    V(b, z) = \max_{c \in [0, b]} \; u(c) + \beta \, \E\!\left[\, V(b', z') \,\big|\, z \,\right]
+  \]
+  This can be thought of as a fixed point of the Bellman operator $\mathcal{T}$ which applies \textbf{lookahead},
+  \[
+    \mathcal{T}v(b, z) \equiv \max_{c \in [0, b]} \; u(c) + \beta \, \E\!\left[\, v(b', z') \,\big|\, z \,\right]
+  \]
+  So that the Bellman equation is,
+  \[
+    V = \mathcal{T}V.
+  \]
+  I define a similar \textbf{outer Bellman equation}.
+\end{frame}
+
+\begin{frame}{The Outer Bellman Equation}
+  The true $\CV$ also satisfies a recursive equation, the \textbf{outer Bellman equation}:
+  \[
+    \Vend(\xend; \Lstart, Z) \;=\; \E_Z\psq{\Vstarttil{}'(\xend)\,\Big|\, Z},
+  \]
+  where
+  \begin{align*}
+    \Vstarttil{}'  &= \Phi_V\bigl(\Lend, \Vendtil{}', Z'\bigr), \\
+    \Vendtil{}' &= \CV(\Lambda^\text{end}, Z'), \\
+    Z' &\sim \Pi_Z(\cdot \mid Z), \\
+    \Lend &= \Phi_\Lambda(\Lstart, \Vendtil, Z), \\
+    \Vendtil &= \CV(\Lstart, Z).
+  \end{align*}
+\end{frame}
+
+\begin{frame}{The Outer Bellman Operator}
+  For any $\CV_\theta$, we can define the \textbf{outer Bellman operator} as:
+  \[
+    \mathcal{L}\CV_\theta(\Lstart, Z)(\xend) \equiv \E_Z\psq{\Vstarttil{}'(\xend)\,\Big|\, Z},
+  \]
+  where
+  \begin{align*}
+    \Vstarttil{}'  &= \Phi_V\bigl(\Lend, \Vendtil{}', Z'\bigr), \\
+    \Vendtil{}' &= \CV_\theta(\Lambda^\text{end}, Z'), \\
+    Z' &\sim \Pi_Z(\cdot \mid Z), \\
+    \Lend &= \Phi_\Lambda(\Lstart, \Vendtil, Z), \\
+    \Vendtil &= \CV_\theta(\Lstart, Z).
+  \end{align*}
+\end{frame}
+
+\begin{frame}{The Outer Bellman Residual}
+  The true \textbf{continuation value operator} $\CV$ is defined by,
+  \[
+    \mathcal{L}\CV = \CV.
+  \]
+  For any $\CV_\theta$, we can define the \textbf{outer Bellman residual} as,
+  \[
+    \mathcal{L}\CV_\theta - \CV_\theta,
+  \]
+  and we can frame the problem of approximating $\CV$ as,
+  \[
+    \min_\theta \norm{\mathcal{L}\CV_\theta - \CV_\theta}^2.
+  \]
+\end{frame}
+
+% =============================================================
+\section[Implementing CVIAYN]{Implementing CVIAYN}
+% =============================================================
+
+\begin{frame}{What we inherit from L7}
+
+The L7 K-S notebook already gives us everything except the network and the training loop:
+
+\begin{itemize}
+  \item \texttt{KSParams} (\S3 of L7).
+  \item \texttt{ks\_prices(K, Z, p)} (\S4 of L7).
+  \item The 3-stage \emph{simulation} chain \texttt{ks\_household\_sim} = \texttt{z\_shock} $\circ$ \texttt{income} $\circ$ \texttt{savings} (\S8 of L7).
+  \item \texttt{aiyagari\_steady\_state\_at\_Z} (\S5 of L7) --- gives us $V_{\mathrm{ss}}$ for pretraining and $\Lambda_{\mathrm{ss}}$ as the sampler's initial condition.
+\end{itemize}
+
+\smallskip
+
+\textbf{What we drop:} the \texttt{K\_evolve} + \texttt{Z\_shock} chain tail (the agent's ALM belief) \emph{and} the $K$-grid in $V$. The network replaces both.
+
+\end{frame}
+
+\begin{frame}{$\Phi$ in code: just the simulation chain}
+
+The 3-stage chain \emph{is} our $\Phi$. Given any $\Vendtil$ over the idiosyncratic $(b, z)$ grid, it
+
+\begin{itemize}
+  \item runs backward to get $\Vstarttil$ (savings stage solves the household's choice; income / z\_shock stages compose);
+  \item runs forward to push $\mu^\text{start}$ to $\mu^\text{end}$.
+\end{itemize}
+
+\smallskip
+
+The only thing it cannot do alone is supply $\Vendtil$. That's what $\CV_\theta$ provides.
+
+\end{frame}
+
+\begin{frame}{Architecture: how does $\Lambda$ get in?}
+
+We can't dump an $N_b \times N_z$ field into a dense layer and learn anything. The standard fix (Han--Yang--E 2025): summarise $\Lambda$ as a small \emph{learned} vector before the value head sees it.
+
+\smallskip
+
+Four sub-nets:
+\begin{enumerate}
+  \item \texttt{pop\_agg\_net} $: (b, z) \to \R^{k}$ — embed each cell.
+  \item $\mathrm{GM}(\Lambda) = \sum_{(b,z)} \Lambda(b, z) \cdot \texttt{pop\_agg\_net}(b, z) \in \R^k$ — population-weighted mean of embeddings. One matmul.
+  \item \texttt{V\_pre} $: (b, z) \to \R^m$ — cell-level features for the value head.
+  \item \texttt{V\_post} $: \R^{m + N_Z} \to \R$ — combines \texttt{V\_pre}'s features with the (projected) GM and the $Z$ one-hot.
+\end{enumerate}
+
+\smallskip
+
+Combination is \textbf{additive}: \texttt{V\_pre(cell) + gm\_post(GM)}, then concatenate $Z$.
+
+\end{frame}
+
+\begin{frame}[fragile]{The network in code}
+\begin{lstlisting}
+struct VNet{A, P, G, V}
+    pop_agg_net::A   # 2 -> gm_dim       per-cell embedding
+    V_pre::P         # 2 -> mid          per-cell features
+    gm_post::G       # gm_dim -> mid     project GM to mid
+    V_post::V        # mid + N_Z -> 1    combine + Z
+end
+
+function (net::VNet)(Λ, Z_idx, p)
+    pop_emb = net.pop_agg_net(HH_FEAT)       # (gm_dim, N_cells)
+    gm      = pop_emb * Float32.(vec(Λ))     # (gm_dim,)
+    h       = net.V_pre(HH_FEAT) .+ net.gm_post(gm)  # (mid, N_cells)
+    pred    = net.V_post(vcat(h, Z_ROWS[Z_idx]))     # (1, N_cells)
+    return reshape(pred, p.N_w, length(p.z_grid))
+end
+\end{lstlisting}
+
+The bottleneck $k = $ \texttt{gm\_dim} replaces the $N_b N_z$-dim input with a learned $k$-dim summary.
+
+\end{frame}
+
+\begin{frame}[fragile]{One inner solve under $V_\theta$}
+\begin{lstlisting}
+function inner_solve(hh, vnet::VNet, Λ::AbstractMatrix, Z_idx::Int, p)
+    V_end = Float64.(vnet(Λ, Z_idx, p))   # N_b x N_z
+    env   = make_env(hh; ks_prices(integrate_K(hh, Λ),
+                                   p.Z_vals[Z_idx], p)...)
+    return backward!(hh, V_end, env)
+end
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item Network predicts $\Vendhat_\theta$ at $(\Lambda, Z)$.
+  \item Build \texttt{env} at prices $(r, w) = \texttt{ks\_prices}(K(\Lambda), Z, p)$. Prices depend on $\Lambda$ only through $K = \int b\, d\Lambda$ --- that's the production technology, not the network's architecture.
+  \item One backward sweep through the 3-stage chain $\Rightarrow$ $\Vstarttil$.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{The lookahead operator $\Lop V_\theta$}
+\begin{lstlisting}
+function lookahead(hh, vnet, Λ_start, Z_idx, p)
+    # Forward one period under V_theta to get Lambda_end.
+    V_end_now = Float64.(vnet(Λ_start, Z_idx, p))
+    env_now   = make_env(hh; ks_prices(integrate_K(hh, Λ_start),
+                                       p.Z_vals[Z_idx], p)...)
+    backward!(hh, V_end_now, env_now)
+    Λ_end = forward!(hh, Λ_start)
+
+    # Backward at each next-period Z; take expectation over Z.
+    V_end_pred = zeros(p.N_w, length(p.z_grid))
+    for Z_next in 1:N_Z
+        V_start_next = inner_solve(hh, vnet, Λ_end, Z_next, p)
+        V_end_pred .+= p.P_Z[Z_idx, Z_next] .* V_start_next
+    end
+    return V_end_pred
+end
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}{What just happened}
+
+We computed $\Lop V_\theta$ at one sample $\Lstart_i$ with aggregate index $Z_i$:
+\begin{enumerate}
+  \item Network predicts $\Vendhat_\theta$ at $(\Lstart_i, Z_i)$.
+  \item $\Phi$ pushes $\Lstart_i$ forward $\to$ $\Lambda^\text{end}_i$.
+  \item For each $Z_\text{next}$, network predicts $\Vendhat_\theta$ at $(\Lambda^\text{end}_i, Z_\text{next})$. Backward through $\Phi$ gives $\Vstart_\text{next}$.
+  \item Take expectation over $Z_\text{next}$ using $P_Z[Z_i, \cdot]$.
+\end{enumerate}
+
+\smallskip
+
+Result: a $(b, z)$-shaped array, $\widehat\Vend_i$. This is our training label.
+
+\end{frame}
+
+\begin{frame}[fragile]{The training loss}
+\begin{lstlisting}
+function bellman_residual_loss(vnet, batch, p, hh)
+    L = 0.0
+    for (Λ_start, Z_idx) in batch
+        target = lookahead(hh, vnet, Λ_start, Z_idx, p)
+        pred   = vnet(Λ_start, Z_idx, p)
+        L += mean((pred .- Float32.(target)).^2) / var_scale(target)
+    end
+    return L / length(batch)
+end
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\textbf{Stop-gradient on the label.} The lookahead is computed once and treated as a fixed target. We do \emph{not} differentiate through $\Phi$ (the within-period solver). Only $V_\theta$'s direct dependence on $\theta$ enters the gradient.
+
+\end{frame}
+
+\begin{frame}[fragile]{Sampling $\Lstart$}
+\begin{lstlisting}
+function sample_ergodic(hh, vnet, p; T=200, burn=100, every=2, rng=...)
+    Λ, Z_idx = copy(Λ_ss), 1
+    batch = Tuple{Matrix{Float64}, Int}[]
+    for t in 1:T
+        V_end = Float64.(vnet(Λ, Z_idx, p))
+        env   = make_env(hh; ks_prices(integrate_K(hh, Λ),
+                                       p.Z_vals[Z_idx], p)...)
+        backward!(hh, V_end, env); Λ = forward!(hh, Λ)
+        Z_idx = sample_Z(Z_idx, p.P_Z, rng)
+        t > burn && (t - burn) % every == 0 && push!(batch, (copy(Λ), Z_idx))
+    end
+    return batch
+end
+\end{lstlisting}
+
+MCMC-style: simulate under the \emph{current} $V_\theta$, burn in, subsample.
+
+\end{frame}
+
+\begin{frame}[fragile]{The training loop}
+\begin{lstlisting}
+function train!(vnet, p, hh; epochs=50, lr=1e-3, batch_kwargs=(; T=200, burn=100))
+    opt  = Flux.setup(Adam(lr), vnet)
+    hist = Float64[]
+    for epoch in 1:epochs
+        batch = sample_ergodic(p, hh, vnet; batch_kwargs...)
+        loss, grads = Flux.withgradient(vnet) do net
+            bellman_residual_loss(net, batch, p, hh)
+        end
+        Flux.update!(opt, vnet, grads[1])
+        push!(hist, loss)
+    end
+    return hist
+end
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}{Initialization matters}
+
+A randomly-initialized $V_\theta$ usually produces a within-period solve that fails (numerically unbounded consumption, etc.).
+
+\smallskip
+
+\textbf{Pretrain.} Match the deterministic value function $V_{\mathrm{ss}}$ across a cloud of $\Lambda$'s (perturbed $\Lambda_{\mathrm{ss}}$) and all $Z$'s. Not because $V_{\mathrm{ss}}$ is right at any $\Lambda \neq \Lambda_{\mathrm{ss}}$ --- it isn't --- but because it's a sensible \emph{constant baseline} that gets $V_\theta$ into the right scale and shape before the residual training loop starts moving things around.
+
+\smallskip
+
+Cheap, no L7 dependency.
+
+\end{frame}
+
+\begin{frame}[fragile]{Running it}
+\begin{lstlisting}
+p    = KSParams()
+hh   = ks_household_2d(p)
+vnet = VNet()
+pretrain_to_ss!(vnet, V_ss, p)
+
+hist = train!(vnet, hh, p; epochs=50)
+plot(hist; yaxis=:log, lw=2,
+     xlabel="epoch", ylabel="outer Bellman residual")
+\end{lstlisting}
+
+\vspace{0.4em}
+
+\textbf{Honest disclaimer.} 50 epochs on a CPU is a \emph{demonstration}, not a converged solve. Real runs take many thousands of epochs on a GPU. See \S7.
+
+\end{frame}
+
+% =============================================================
+\section[Reading the Answer]{Reading the Answer}
+% =============================================================
+
+\begin{frame}{The training curve}
+
+\begin{itemize}
+  \item Outer Bellman residual on log scale, vs.\ training epoch.
+  \item Expect a noisy but downward-trending curve.
+  \item In a real run (Peking 2025 deck, \S5): NN reaches $\approx 10^{-4.4}$ relative variance; K-S baseline plateaus at $\approx 10^{-3.2}$.
+\end{itemize}
+
+\smallskip
+
+The gap is the headline: at convergence, $V_\theta$ explains the residual variance \emph{better} than K-S does, on the same problem, with no parametric ansatz.
+
+\end{frame}
+
+\begin{frame}{What "outer Bellman residual" means as an error}
+
+A small residual means $V_\theta$ is approximately a fixed point of $\Lop$.
+
+\smallskip
+
+By a contraction argument (standard, when $\Lop$ is a $\beta$-contraction), this implies $\norm{V_\theta - V} \leq \frac{1}{1-\beta}\norm{V_\theta - \Lop V_\theta}$. Small residual $\Rightarrow$ small distance to truth.
+
+\smallskip
+
+\textbf{Caveat.} The contraction property of $\Lop$ for this setup is a research-grade question; the paper appendix sketches conditions. For our K-S baseline, the empirical contraction holds.
+
+\end{frame}
+
+\begin{frame}{Comparison with K--S}
+
+Three ways to compare $V_\theta$ to L7's K-S baseline:
+\begin{enumerate}
+  \item \textbf{Value-function MSE} on a common $(b, z, \Lambda_t, Z_t)$ simulation path. K-S evaluates at $K_t$; CVIAYN evaluates at $\Lambda_t$.
+  \item \textbf{Policy MSE}: extract $b'$ from each, compare.
+  \item \textbf{Den Haan error}: simulate aggregate $K_t$ paths under each. CVIAYN matches K-S up to noise here because the K-S \emph{ansatz} happens to be near-true on the baseline calibration (see L7 \S6).
+\end{enumerate}
+
+\smallskip
+
+The interesting deltas appear in (1) and (2) at tail states (rare $\Lambda$, rare $Z$): K-S extrapolates the linear ALM; CVIAYN extrapolates the network.
+
+\end{frame}
+
+\begin{frame}{Where the K--S equivalence breaks}
+
+K--S looks indistinguishable from CVIAYN \emph{on the baseline calibration}. That's because the conditional law of motion of $K$ happens to be approximately log-linear --- and the population marginal we care about for prices, $K$, happens to be a single scalar.
+
+\smallskip
+
+\textbf{Settings where CVIAYN pulls away}:
+
+\begin{itemize}
+  \item Multi-asset (illiquid wealth): non-log-linear dynamics.
+  \item Discrete choice (sector, occupation): occupancy shares aren't moments of $K$.
+  \item Spatial: distribution \emph{across} locations is not summarized by aggregates.
+\end{itemize}
+
+In each case, K--S would need a hand-engineered ansatz tracking extra moments; CVIAYN just grows the GM input.
+
+\end{frame}
+
+% =============================================================
+\section[Generalizations]{Generalizations}
+% =============================================================
+
+\begin{frame}{Where this matters}
+
+\textbf{Models for which the scalar $K$ ansatz \emph{cannot} work:}
+
+\begin{itemize}
+  \item Search-and-matching (vacancy distribution).
+  \item OLG (age structure of the cross-section).
+  \item Spatial (where the population is, not just how much).
+  \item Multi-asset (liquid vs.\ illiquid composition).
+  \item Discrete choice (occupational mix).
+\end{itemize}
+
+\smallskip
+
+CVIAYN with the GM input scales to all of these without changing the algorithm. The recipe grows along well-understood axes: more cell features, per-location GMs, per-age GMs.
+
+\end{frame}
+
+\begin{frame}{How the GM architecture extends}
+
+\textbf{Per-location GM (spatial / urban models).} Build one $\mathrm{GM}_\ell$ per location $\ell$ from the location's own $\Lambda$-slice. An aggregate-of-aggregates net summarises across locations.
+
+\smallskip
+
+\textbf{Age stratification (OLG).} Run a separate \texttt{pop\_agg\_net} per cohort, or share weights and feed age as an extra cell feature.
+
+\smallskip
+
+\textbf{Multi-asset.} The state space gains a dimension; \texttt{pop\_agg\_net} takes $(b_{\mathrm{liq}}, b_{\mathrm{illiq}}, z)$ as input. Nothing else changes.
+
+\smallskip
+
+\textbf{Non-population state.} Spin up an \texttt{env\_net} that embeds exogenous aggregate state into a parallel GM; add to the cell-level features the same way.
+
+\end{frame}
+
+\begin{frame}{The optimized reference implementation}
+
+The notebook's training loop is honest but pedagogical. A production-grade implementation lives in this repository at
+
+\begin{itemize}
+  \item \texttt{reference\_materials/}\\\texttt{example\_usage/stochastic\_transition/code/}\\\texttt{stochastic\_transition/}
+\end{itemize}
+
+\smallskip
+
+It adds, on top of today's structure: per-location GM + aggregate-of-aggregates head; a parallel env\_net for non-population state; cosine-annealed LR; low-memory gradient accumulation; caching of within-period solves along the simulation path; per-location backprop with shared GMs.
+
+\smallskip
+
+The \emph{algorithm} is unchanged; everything is plumbing.
+
+\end{frame}
+
+\begin{frame}{One-step lookahead is a knob}
+
+The lookahead in \S5 was one period: solve $\Phi$ at $\Lstart$, draw $Z_\text{next}$, solve $\Phi$ at $\Lstart{}'$, take expectation.
+
+\smallskip
+
+\textbf{$n$-step lookahead.} Do $n$ rounds of $(\Phi, \Omega)$ inside the operator. Equivalent to applying $\Lop^n$.
+
+\smallskip
+
+\begin{itemize}
+  \item Pro: lower bias on the residual target (deeper lookahead $\to$ truer label).
+  \item Con: cost grows linearly in $n$; variance grows in the number of $Z$ paths.
+\end{itemize}
+
+The notebook uses $n = 1$. Higher $n$ is a one-line change.
+
+\end{frame}
+
+% =============================================================
+\appendix
+% =============================================================
+
+\begin{frame}{Appendix}
+\begin{center}
+\Large Three short appendices on:
+
+\begin{itemize}
+  \item why the timing convention matters,
+  \item why we stop-gradient on the lookahead label,
+  \item related literature.
+\end{itemize}
+
+\end{center}
+\end{frame}
+
+\begin{frame}{Why the timing convention matters}
+
+The split into $\Vstart$ vs.\ $\Vend$ is what makes $\CV$ a clean object.
+
+\smallskip
+
+\textbf{Without the split:} $V(\xstart, \Lstart)$ depends on $\Lstart$, but also implicitly forecasts everything that happens \emph{within} $t$. Hard to disentangle "what the network learns" from "what $\Phi$ computes."
+
+\smallskip
+
+\textbf{With the split:} $\Vend$ lives at the moment \emph{just before} the next aggregate shock. Everything inside the period is handled by $\Phi$; everything across periods is handled by $\CV$.
+
+\end{frame}
+
+\begin{frame}{Why stop-gradient on the label}
+
+The label $\widehat\Vend_i$ is itself computed using $V_\theta$ (via the lookahead). One could backprop through that too.
+
+\smallskip
+
+\textbf{Why we don't:}
+
+\begin{itemize}
+  \item Each lookahead involves several runs of $\Phi$, which involves gridsearch, monotone-search tricks, and other non-differentiable pieces.
+  \item The "loss-as-fixed-point-residual" formulation is the standard ML treatment of value iteration; SARSA, Q-learning, etc.\ all stop gradients on bootstrapped targets.
+  \item Empirically, semi-gradient stabilizes training.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{Related literature}
+
+\textbf{Projection / local perturbation:} Bhandari et al.\ (2023), Bilal (2023), Auclert et al.\ (2021), Winberry (2018).
+
+\smallskip
+
+\textbf{Deep policy approximation:} Han et al.\ (2024), Azinovic et al.\ (2022), Maliar et al.\ (2021), Fern\'andez-Villaverde et al.\ (2023), Gu et al.\ (2024).
+
+\smallskip
+
+\textbf{Non-neural value approximation:} Krusell \& Smith (1998), Hull (2015).
+
+\smallskip
+
+\textbf{Generalized moments architecture:} Han, Yang \& E (2025).
+
+\smallskip
+
+CVIAYN extends the third with deep learning, drawing on the GM construction from the fourth.
+
+\end{frame}
+
+\end{document}

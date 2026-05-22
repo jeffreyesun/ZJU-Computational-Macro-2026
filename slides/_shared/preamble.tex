@@ -64,3 +64,29 @@
 \newcommand{\Prob}{\mathbb{P}}
 \newcommand{\norm}[1]{\left\| #1 \right\|}
 \newcommand{\Vstar}{V^{\star}}
+
+\newcommand{\p}[1]{\left( #1 \right)}
+\newcommand{\psq}[1]{\left[ #1 \right]}
+
+% Section page: use the long-form section name (\insertsection) instead of
+% the short-form (\insertsectionhead) so \section[short]{long} renders
+% `long` on the section-title slide and `short` in the header. Cloned
+% from metropolis's `progressbar` section page template.
+\setbeamertemplate{section page}{%
+  \centering%
+  \begin{minipage}{22em}%
+    \raggedright%
+    \usebeamercolor[fg]{section title}%
+    \usebeamerfont{section title}%
+    \insertsection\\[-1ex]%
+    \usebeamertemplate*{progress bar in section page}%
+    \par%
+    \ifx\insertsubsection\@empty\else%
+      \usebeamercolor[fg]{subsection title}%
+      \usebeamerfont{subsection title}%
+      \insertsubsection%
+    \fi%
+  \end{minipage}%
+  \par%
+  \vspace{\baselineskip}%
+}

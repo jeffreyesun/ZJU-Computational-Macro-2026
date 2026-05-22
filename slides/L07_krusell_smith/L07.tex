@@ -3,21 +3,15 @@
 \input{../_shared/preamble.tex}
 
 \usepackage{fontspec}
-\usepackage{xeCJK}
 
 \setmainfont{Latin Modern Roman}
 \setsansfont{Latin Modern Sans}
 \setmonofont{DejaVu Sans Mono}[Scale=0.85]
 
-\setCJKmainfont{Noto Sans CJK SC}
-\setCJKsansfont{Noto Sans CJK SC}
-\setCJKmonofont{Noto Sans Mono CJK SC}
-
 % Composition operator: ∘ with subscript s. Carried for legacy parity.
 \newcommand{\circs}{\mathbin{\circ_s}}
 
-\title{Lecture 7: The Krusell--Smith Method \\
-       {\large 第七讲：Krusell--Smith 方法}}
+\title{Lecture 7: The Krusell--Smith Method}
 \subtitle{Computational Methods for Heterogeneous-Agent Macro}
 \author{Jeffrey Sun}
 \institute{University of Toronto}
@@ -27,118 +21,17 @@
 
 \maketitle
 
-
 % =============================================================
-\section[Recap \& Framing]{Recap \& Framing / 回顾与定位}
-% =============================================================
-
-\begin{frame}{Where we are \\ 我们走到哪里了}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item L1--L4: build the household block; solve Aiyagari at a single steady state.
-  \item L5: \texttt{HouseholdStages.jl} + the deterministic \emph{transition} between two steady states.
-  \item L6: spatial heterogeneity + indirect inference (calibration).
-  \item \textbf{Today (L7):} aggregate \emph{uncertainty}.
-\end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item L1--L4：搭家庭块；求单点 Aiyagari 稳态。
-  \item L5：\texttt{HouseholdStages.jl} 与两稳态之间的确定性过渡。
-  \item L6：空间异质性 + 间接推断（校准）。
-  \item \textbf{今天（L7）：}总量\emph{不确定性}。
-\end{itemize}
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{What changes today \\ 今天有什么不同}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item In L5, the path $\{K_t\}$ was \emph{deterministic}: once we conjectured it, the household solve never had to integrate over the future of $K$.
-  \item Today we add an aggregate productivity shock $Z_t$ on a Markov chain. Prices $(r_t, w_t)$ become \emph{stochastic} along the path.
-  \item Two new ideas: a \textbf{state explosion} and the classical \textbf{K--S workaround}.
-\end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item L5 中 $\{K_t\}$ 是\emph{确定}的：一旦猜出路径，家庭无需对未来 $K$ 求期望。
-  \item 今天加入总量生产率冲击 $Z_t$（Markov 链）。价格 $(r_t, w_t)$ 沿路径变\emph{随机}。
-  \item 两个新想法：\textbf{状态空间爆炸}与经典的 \textbf{K--S 折中}。
-\end{itemize}
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{Today's roadmap \\ 今日路线图}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\begin{enumerate}
-  \item Recap \& framing.
-  \item The state explosion.
-  \item The K--S workaround.
-  \item \emph{Break.}
-  \item Implementing K--S in code.
-  \item The accuracy debate ($R^2$, Den Haan).
-  \item Wrap; L8 teaser.
-\end{enumerate}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{enumerate}
-  \item 回顾与定位。
-  \item 状态空间爆炸。
-  \item K--S 折中。
-  \item \emph{中场休息}。
-  \item K--S 的代码实现。
-  \item 准确性辩论（$R^2$、Den Haan）。
-  \item 收尾；预告 L8。
-\end{enumerate}
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{One sentence preview \\ 一句话预告}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-The rational household needs the entire wealth distribution $\Lambda_t$ in its state space.
-\smallskip
-
-That's infeasible. \textbf{Krusell--Smith} replace $\Lambda_t$ with a single number ($K_t$) plus a one-line forecast rule. Then they show that --- against all expectations --- this is essentially exact in the baseline calibration.
-\smallskip
-
-The \emph{why} of that exactness is the topic of \S6.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-理性主体的状态空间应包含整个财富分布 $\Lambda_t$。
-\smallskip
-
-这不可行。\textbf{Krusell--Smith} 把 $\Lambda_t$ 换成单个数 $K_t$ 加一行预测规则；随后他们证明 —— 出乎意料 —— 在基线标定下这\emph{几近精确}。
-\smallskip
-
-这种"精确"的原因是 \S6 的主题。
-\end{column}
-\end{columns}
-\end{frame}
-
-
-% =============================================================
-\section[State Explosion]{The State Explosion / 状态空间爆炸}
+\section[Curse of Dimensionality]{Curse of Dimensionality}
 % =============================================================
 
-\begin{frame}{Setup \\ 设定}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\textbf{Aggregate state.} TFP $Z_t \in \{Z_{\text{bad}}, Z_{\text{good}}\}$ on a 2-state Markov chain $P_Z$.
+\begin{frame}{Setup}
+
+\textbf{Aggregate state.} TFP $Z_t \in \{Z_{\text{bad}}, Z_{\text{good}}\}$ Markov  with $P_Z$.
 
 \smallskip
 
-\textbf{Idiosyncratic state.} Income $y_t \in \{y_{\text{lo}}, y_{\text{hi}}\}$ on Markov chain $P_y$, plus wealth $b_t$.
+\textbf{Idiosyncratic state.} $(z_{it}, b_{it})$ Productivity $z_{it} \in \{z_{\text{lo}}, z_{\text{hi}}\}$ Markov with $P_z$; Wealth $b_{it}$.
 
 \smallskip
 
@@ -149,34 +42,13 @@ The \emph{why} of that exactness is the topic of \S6.
 
 \smallskip
 
-$L$ is the stationary-mean of $y$ (constant in this model since $P_y \perp Z$).
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{总量状态。} TFP $Z_t \in \{Z_{\text{bad}}, Z_{\text{good}}\}$，二态 Markov 链 $P_Z$。
+$L$ is assumed-constant stationary mean of $z$.
 
-\smallskip
-
-\textbf{个体状态。}收入 $y_t \in \{y_{\text{lo}}, y_{\text{hi}}\}$（Markov $P_y$），加财富 $b_t$。
-
-\smallskip
-
-\textbf{生产。} Cobb--Douglas + TFP $Z_t$：
-\[
-  Y_t = Z_t\, K_t^{\alpha} L^{1-\alpha}.
-\]
-
-\smallskip
-
-$L$ 是 $y$ 的平稳均值（$P_y$ 与 $Z$ 独立，所以是常数）。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{Prices on the realised path \\ 实现路径上的价格}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-By firm optimisation, the rental rate and wage are
+\begin{frame}{Prices}
+
+Rental rate and wage given by $Z_t, K_t, L$,
 \[
   r(Z_t, K_t) = \alpha\, Z_t\, (K_t/L)^{\alpha-1} - \delta,
 \]
@@ -186,314 +58,103 @@ By firm optimisation, the rental rate and wage are
 
 \smallskip
 
-So once we know the realised $(Z_t, K_t)$, the household sees deterministic prices \emph{this} period.
+Problem: Household price forecasts both \textbf{affect} and \textbf{depend on} future $K_{t+1}$.
 
-\smallskip
-
-The trouble is that the household must also forecast \emph{next} period's $(Z_{t+1}, K_{t+1})$ when choosing $b_{t+1}$.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-按厂商优化，租金率与工资为
-\[
-  r(Z_t, K_t) = \alpha\, Z_t\, (K_t/L)^{\alpha-1} - \delta,
-\]
-\[
-  w(Z_t, K_t) = (1-\alpha)\, Z_t\, (K_t/L)^{\alpha}.
-\]
-
-\smallskip
-
-只要 $(Z_t, K_t)$ 已实现，本期价格就是确定的。
-
-\smallskip
-
-困难在于：选 $b_{t+1}$ 时，家庭还要预测\emph{下期} $(Z_{t+1}, K_{t+1})$。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{Why $K_{t+1}$ depends on $\Lambda_t$ \\ 为什么 $K_{t+1}$ 依赖 $\Lambda_t$}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-$K_{t+1}$ is the integral of household savings choices:
+\begin{frame}{$K_{t+1}$ depends on $\Lambda_t$}
+
 \[
-  K_{t+1} = \int b'(b, y; \cdot)\, \mathrm d\Lambda_t(b, y).
+  K_{t+1} = \int b_i'(b_i, z_i;\, Z_t, K_t)\, \mathrm d\Lambda_t(b_i, z_i).
 \]
 
 \smallskip
 
-The policy $b'(\cdot)$ depends on the prices the household \emph{expects} for next period, which depend on $K_{t+1}$, which depends on the integral above, which depends on $\Lambda_t$.
+Policy $b_i'(b_i, z_i;\, Z_t, K_t)$ depends on price forecasts.
+
+Price $r_{t+s}, w_{t+s}$ forecasts depend on $\Lambda_{t+s}$ through $K_{t+s}$.
 
 \smallskip
 
-\textbf{Conclusion.} Two distributions $\Lambda_t$ with the \emph{same} mean $K_t$ can in principle generate different $K_{t+1}$.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-$K_{t+1}$ 是家庭储蓄选择的积分：
-\[
-  K_{t+1} = \int b'(b, y; \cdot)\, \mathrm d\Lambda_t(b, y).
-\]
+\textbf{Note:} Same $K_t$ from different $\Lambda_t$ can imply different $K_{t+1}$.
 
-\smallskip
-
-储蓄策略 $b'(\cdot)$ 依赖于家庭对下期价格的\emph{预期}，预期依赖于 $K_{t+1}$，$K_{t+1}$ 又依赖于上面这个积分 —— 依赖于 $\Lambda_t$。
-
-\smallskip
-
-\textbf{结论。}两个均值 $K_t$ 相同的分布 $\Lambda_t$ 原则上可以给出不同的 $K_{t+1}$。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{The rational Bellman \\ 理性 Bellman}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-A fully rational household tracks the whole state $(b, y; \Lambda, Z)$:
+\begin{frame}{Bellman Equation}
+
+\textbf{Distribution} $\Lambda$ becomes a \textbf{state variable}:
 \[
-  V(b, y; \Lambda, Z) = \max_{c, b'} u(c) + \beta\, \E\!\bigl[V(b', y'; \Lambda', Z') \mid y, Z\bigr],
+  V(b_i, z_i; \Lambda, Z) = \max_{c_i, b_i'} u(c_i) + \beta\, \E\!\bigl[V(b_i', z_i'; \Lambda', Z') \mid z_i, Z\bigr],
 \]
-subject to
-\[
-  c + b' = (1 + r(Z, K(\Lambda)))\, b + w(Z, K(\Lambda))\, y,
-\]
-and the law of motion
-\[
-  \Lambda' = T(\Lambda, Z, Z').
-\]
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-完全理性家庭追踪全状态 $(b, y; \Lambda, Z)$：
-\[
-  V(b, y; \Lambda, Z) = \max_{c, b'} u(c) + \beta\, \E\!\bigl[V(b', y'; \Lambda', Z') \mid y, Z\bigr],
-\]
-预算约束
-\[
-  c + b' = (1 + r(Z, K(\Lambda)))\, b + w(Z, K(\Lambda))\, y,
-\]
-分布演化
-\[
-  \Lambda' = T(\Lambda, Z, Z').
-\]
-\end{column}
-\end{columns}
+
 \end{frame}
 
-\begin{frame}{$\Lambda$ is infinite-dimensional \\ $\Lambda$ 是无穷维的}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-$\Lambda_t$ is a probability measure on $(b, y)$. To pin it down we need to know its value on every measurable set --- an infinite-dimensional object.
+\begin{frame}{$\Lambda$ is infinite-dimensional}
+
+$\Lambda_t$ is a \textbf{distribution} over every $(b, z)$.
 
 \smallskip
 
-To use $V(b, y; \Lambda, Z)$ in code, we would have to tabulate $V$ over a grid in $\Lambda$. But $\Lambda$ does not live in a finite-dimensional grid.
+The ``true'' $\Lambda_t$ is infinite-dimensional.
 
 \smallskip
 
-\textbf{This is the Krusell--Smith problem.}
+Even if we discretize $\Lambda_t$ into a matrix, \textbf{every gridpoint is a state variable}.
+
+With $N_w = 80$ wealth gridpoints and $N_z = 2$ productivity levels, grid has 160 points.
 
 \smallskip
 
-Without a workaround, full-rationality HA + aggregate shocks is computationally hopeless.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-$\Lambda_t$ 是 $(b, y)$ 上的概率测度。要确定它，需在每个可测集上的值 —— 无穷维对象。
+A $V$ grid over possible $\Lambda$ values: $5^{160-1}$ cells. About $10^{111}$.
 
-\smallskip
-
-要在代码里用 $V(b, y; \Lambda, Z)$，得在 $\Lambda$ 的网格上制表 $V$。但 $\Lambda$ 不住在任何有限维网格里。
-
-\smallskip
-
-\textbf{这就是 Krusell--Smith 问题。}
-
-\smallskip
-
-不做近似，"完全理性 HA + 总量冲击"在计算上无望。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{Just how bad is it? \\ 究竟有多糟糕？}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\textbf{Discretise $\Lambda$ na\"\i vely.} Suppose we cut wealth into $N_w = 80$ bins and income into $N_y = 2$ levels. A distribution on this grid is a point in the $(160{-}1)$-simplex --- 159 free coordinates.
+\begin{frame}{Tractably Parametrizing $V(\ldots\ ;\ \ldots,\ \Lambda)$}
+
+\textbf{(a) Reduce $\Lambda$.} (Krusell-Smith.) Use moments of $\Lambda_t$ instead of the whole distribution.
 
 \smallskip
 
-To grid $V$ over $\Lambda$ with even 5 points per coordinate: $5^{159}$ cells. About $10^{111}$.
+\textbf{(b) Reduce the representation.} (nVFI.) Parameterise $V(\Lambda, \cdot)$ by a flexible family of functions (e.g. a \textbf{neural network}).
 
-\smallskip
-
-\textbf{For comparison.} Atoms in the observable universe: $\sim 10^{80}$.
-
-\smallskip
-
-A coarser grid still loses to the universe.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{对 $\Lambda$ 朴素离散化。}财富分 $N_w = 80$ 格、收入 $N_y = 2$ 状态，则分布是 $(160{-}1)$-单纯形上的一点 —— 159 个自由坐标。
-
-\smallskip
-
-每个坐标 5 点制表 $V$：$5^{159}$ 个格子，约 $10^{111}$。
-
-\smallskip
-
-\textbf{对照。}可观测宇宙中的原子数约 $10^{80}$ 个。
-
-\smallskip
-
-更粗的网格依然输给宇宙。
-\end{column}
-\end{columns}
 \end{frame}
-
-\begin{frame}{Two ways out \\ 两条出路}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\textbf{(a) Reduce the state.} Believe $\Lambda_t$ is summarised by a few moments. Replace $\Lambda$ with those moments in the state. Solve the reduced problem.
-
-\smallskip
-
-\textbf{(b) Reduce the representation.} Keep $\Lambda$ in the state, but parameterise $V(\Lambda, \cdot)$ by some flexible family of functions whose parameter dimension does not depend on $\Lambda$'s grid.
-
-\smallskip
-
-\textbf{Today.} Path (a) --- Krusell--Smith. \textbf{Tomorrow (L8).} Path (b) --- neural-net parameterisation.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{（a）减状态。}假设 $\Lambda_t$ 可由少数矩概括，把矩放入状态，解约化问题。
-
-\smallskip
-
-\textbf{（b）减表示。}保持 $\Lambda$ 在状态中，但用一族灵活函数参数化 $V(\Lambda, \cdot)$，其参数维度与 $\Lambda$ 网格无关。
-
-\smallskip
-
-\textbf{今天。}（a）—— Krusell--Smith。\textbf{明天（L8）。}（b）—— 神经网络参数化。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{The Krusell--Smith problem statement \\ K--S 问题的正式陈述}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\textbf{Given.}
-\begin{itemize}
-  \item Aggregate shock $Z_t$ on $P_Z$.
-  \item Idiosyncratic shock $y_t$ on $P_y$, independent of $Z$.
-  \item Technology $Y_t = Z_t K_t^{\alpha} L^{1-\alpha}$, depreciation $\delta$.
-  \item Preferences: CRRA, discount $\beta$, no borrowing.
-\end{itemize}
-
-\textbf{Find.} A recursive equilibrium: $V$, $b'(\cdot)$, prices $(r, w)$, and a law of motion for $\Lambda$.
-
-\textbf{Concession.} Today's equilibrium is \emph{approximate} --- rationality bounded to a low-dim summary of $\Lambda$.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{给定。}
-\begin{itemize}
-  \item 总量冲击 $Z_t$（$P_Z$）。
-  \item 个体冲击 $y_t$（$P_y$），与 $Z$ 独立。
-  \item 生产 $Y_t = Z_t K_t^{\alpha} L^{1-\alpha}$，折旧 $\delta$。
-  \item 偏好：CRRA、贴现 $\beta$、不能借贷。
-\end{itemize}
-
-\textbf{求。}递归均衡：$V$、$b'(\cdot)$、价格 $(r, w)$、$\Lambda$ 的演化律。
-
-\textbf{让步。}今天的均衡是\emph{近似的} —— 理性被限制在 $\Lambda$ 的低维概括上。
-\end{column}
-\end{columns}
-\end{frame}
-
 
 % =============================================================
-\section[K--S Workaround]{The K--S Workaround / K--S 折中}
+\section[K--S Method]{Krusell--Smith Method}
 % =============================================================
 
-\begin{frame}{Bounded rationality \\ 有限理性}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-Krusell and Smith (1998): \emph{drop} the assumption that the household tracks $\Lambda_t$. Tell the household:
+\begin{frame}{Microfoundation: Bounded Rationality}
+
+Krusell and Smith (1998): Assume the \textbf{household} only observes moments of $\Lambda_t$, not the whole distribution.
 
 \smallskip
 
-\textbf{"You are allowed to know $K_t$ (a number) and $Z_t$. You are not allowed to know any other moment of $\Lambda_t$."}
+i.e. solve a model of $V(b, z; Z, K)$, not $V(b, z; Z, \Lambda)$.
 
-\smallskip
-
-This is a \emph{modelling} choice --- it makes households behave \emph{as if} they cannot observe the full distribution.
-
-\smallskip
-
-It will turn out that, in this baseline, full-rationality decisions are essentially identical to bounded-rationality decisions. But that's the result, not the assumption.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-Krusell--Smith (1998)：\emph{放弃}家庭追踪 $\Lambda_t$ 的设定。告诉家庭：
-
-\smallskip
-
-\textbf{"你只允许知道 $K_t$（一个数）和 $Z_t$。$\Lambda_t$ 的其他矩你都不许看。"}
-
-\smallskip
-
-这是一个\emph{建模}选择 —— 让家庭表现得\emph{仿佛}无法观察整体分布。
-
-\smallskip
-
-后面会发现：在基线下，完全理性与有限理性决策几乎相同。但这是结果，不是假设。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{The Approximate Law of Motion \\ 近似演化律}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-The household is given a forecast rule for $K$:
+\begin{frame}{The Approximate Law of Motion}
+
+Assume household uses a forecast rule for $K$:
 \[
-  \log K_{t+1} = a_0(Z_t) + a_1(Z_t)\, \log K_t.
+  \log K_{t+1} = a_0 Z_t + a_1 Z_t\, \log K_t.
 \]
 
 \textbf{Two coefficients per $Z$ state.} For 2-state $Z$, four numbers total.
 
-\textbf{Log-linear.} An empirical insight from KS-1998: when one tries this on simulated data, log-linear in $K$ is already excellent.
+\textbf{Log-linear.} K--S find this is actually a very good fit.
 
-We will see the \emph{why} in \S6 (approximate aggregation). For now, take it as given.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-家庭被赋予 $K$ 的预测规则：
-\[
-  \log K_{t+1} = a_0(Z_t) + a_1(Z_t)\, \log K_t.
-\]
-
-\textbf{每个 $Z$ 状态两个系数。}两态 $Z$ 共四个数。
-
-\textbf{对数线性。}KS-1998 的经验观察：在模拟数据上拟合时，对数 $K$ 的线性已极佳。
-
-\emph{为什么}见 \S6（近似聚合）。现在先承认。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{The bounded-rationality Bellman \\ 有限理性 Bellman}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
+\begin{frame}{The bounded-rationality Bellman}
+
 Replace $\Lambda$ with $K$ in the state:
 \[
-  V(b, y, Z, K) = \max_{c, b'} u(c) + \beta\, \E\bigl[V(b', y', Z', K')\bigr],
+  V(b_i, z_i, Z, K) = \max_{c_i, b_i'} u(c_i) + \beta\, \E\bigl[V(b_i', z_i', Z', K')\bigr],
 \]
 subject to
 \[
-  c + b' = (1 + r(Z, K))\, b + w(Z, K)\, y,
+  c_i + b_i' = (1 + r(Z, K))\, b_i + w(Z, K)\, z_i,
 \]
 with the agent's \emph{belief}
 \[
@@ -501,90 +162,27 @@ with the agent's \emph{belief}
 \]
 and $Z'$ drawn from $P_Z$.
 
-\smallskip
-
-The state is now $(b, y, Z, K)$: \textbf{4D}, finite, gridable.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-状态中用 $K$ 代替 $\Lambda$：
-\[
-  V(b, y, Z, K) = \max_{c, b'} u(c) + \beta\, \E\bigl[V(b', y', Z', K')\bigr],
-\]
-预算
-\[
-  c + b' = (1 + r(Z, K))\, b + w(Z, K)\, y,
-\]
-家庭\emph{信念}
-\[
-  K' = \exp(a_0(Z) + a_1(Z) \log K),
-\]
-$Z'$ 从 $P_Z$ 抽取。
-
-\smallskip
-
-状态变为 $(b, y, Z, K)$：\textbf{4 维}、有限、可制表。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{The chain in five stages \\ 五个 Stage 的链}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
+\begin{frame}{The chain in five stages}
+
 Within a period, in time order:
 \begin{enumerate}
-  \item \texttt{IncomeShock}: $y_t \to y_{t+1}$ (Markov on \texttt{:income}).
-  \item \texttt{IncomeReceipt}: $b' \gets (1+r) b + w\, y$, with $(r, w)$ from $(Z, K)$.
-  \item \texttt{ConsumptionSavings}: pick $b_{t+1}$.
-  \item \texttt{KEvolve}: $K_t \to K_{t+1}$ via the agent's ALM (deterministic).
-  \item \texttt{ZShock}: $Z_t \to Z_{t+1}$ (Markov on \texttt{:Z\_idx}).
+  \item \texttt{z\_shock}: $z_{it} \to z_i^{t+1}$ (Markov on \texttt{:z}).
+  \item \texttt{income}: $b_i' \gets (1+r) b_i + w\, z_i$, with $(r, w)$ from $(Z, K)$.
+  \item \texttt{savings}: pick $b_i^{t+1}$.
 \end{enumerate}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-期内（时间顺序）：
-\begin{enumerate}
-  \item \texttt{IncomeShock}：$y_t \to y_{t+1}$。
-  \item \texttt{IncomeReceipt}：$b' \gets (1+r)b + wy$，价格读自 $(Z, K)$。
-  \item \texttt{ConsumptionSavings}：选 $b_{t+1}$。
-  \item \texttt{KEvolve}：$K_t \to K_{t+1}$，按家庭 ALM（确定）。
-  \item \texttt{ZShock}：$Z_t \to Z_{t+1}$。
-\end{enumerate}
-\end{column}
-\end{columns}
+Moment: \texttt{K\_evolve}: $K_t \to K_{t+1}$.
+Aggregate Shock: \texttt{Z\_shock}: $Z_t \to Z_{t+1}$.
+
 \smallskip
 \begin{center}\small
-\texttt{IncomeShock} $\circ$ \texttt{IncomeReceipt} $\circ$ \texttt{ConsumptionSavings} $\circ$ \texttt{KEvolve} $\circ$ \texttt{ZShock}.
+\texttt{z\_shock} $\circ$ \texttt{income} $\circ$ \texttt{savings}.
 \end{center}
 \end{frame}
 
-\begin{frame}{Why KEvolve and ZShock are at the end \\ 为什么 KEvolve 与 ZShock 在末尾}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\textbf{IncomeReceipt} reads prices from the cell's $(Z, K)$ coordinates.
+\begin{frame}{K--S Outer Loop}
 
-If KEvolve / ZShock ran \emph{before} receipt, the cell would already carry next period's $(Z, K)$ when receipt fires, and prices would be misaligned.
-
-Putting them at the end keeps receipt's reading of $(Z, K)$ on the \emph{start-of-period} values --- as the economics calls for.
-
-A small detail, but recurring when wiring stages into chains.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{IncomeReceipt} 通过 cell 坐标 $(Z, K)$ 读价格。
-
-若 KEvolve / ZShock 在它之前跑，receipt 触发时 cell 上的 $(Z, K)$ 已是下期值，价格会错位。
-
-放末尾可保 receipt 读到的是\emph{期初} $(Z, K)$ —— 符合经济意义。
-
-小细节，但在链组装中经常遇到。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{The K--S iteration in words \\ K--S 迭代（文字版）}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
 \begin{enumerate}
   \item \textbf{Pick} an initial ALM $(a_0^{(0)}, a_1^{(0)})$.
   \item \textbf{Solve} the 4D household VFI given the current ALM.
@@ -592,359 +190,189 @@ A small detail, but recurring when wiring stages into chains.
   \item \textbf{Refit} $(a_0, a_1)$ by OLS of $\log K_{t+1}$ on $\log K_t$, separately per $Z$.
   \item \textbf{Iterate} until ALM coefficients stop moving.
 \end{enumerate}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{enumerate}
-  \item \textbf{初始化} ALM $(a_0^{(0)}, a_1^{(0)})$。
-  \item \textbf{解}当前 ALM 下的 4D VFI。
-  \item \textbf{模拟}：用实现的 $\{Z_t\}$ 与\emph{真实}聚合 $K_t = \int b\, \mathrm d\Lambda_t$。
-  \item \textbf{回归}：分 $Z$ 状态对 $\log K_{t+1}$ 关于 $\log K_t$ 做 OLS。
-  \item \textbf{迭代}至 ALM 系数收敛。
-\end{enumerate}
-\end{column}
-\end{columns}
+
 \end{frame}
 
-\begin{frame}{Why iterate \\ 为什么要迭代}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-The first VFI uses some \emph{guessed} ALM. The household's saving choices follow that belief.
-
-\smallskip
-
-When we simulate the economy with these choices and aggregate honestly, the resulting $K$ path may not be log-linear with the guessed coefficients.
-
-\smallskip
-
-\textbf{Refit.} Update beliefs to the empirical regression. Re-solve.
-
-\smallskip
-
-\textbf{Fixed point.} Stop when the ALM the household believes is the ALM the household generates. That's the K--S equilibrium.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-首轮 VFI 用\emph{猜测的} ALM。家庭储蓄按该信念。
-
-\smallskip
-
-按该选择模拟并真实聚合，所得 $K$ 路径未必恰好满足猜测的对数线性关系。
-
-\smallskip
-
-\textbf{回归更新}：把信念换成经验回归。再解。
-
-\smallskip
-
-\textbf{不动点}：家庭相信的 ALM = 家庭生成的 ALM。这就是 K--S 均衡。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{Inner solve, outer solve \\ 内层与外层}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\textbf{Inner.} A standard 4D VFI at a fixed ALM. The household block from \texttt{HouseholdStages.jl} does the heavy lifting; nothing here is K--S-specific.
-
-\smallskip
-
-\textbf{Outer.} The new piece: simulate, regress, repeat.
-
-\smallskip
-
-Compare:
-\begin{itemize}
-  \item L4 outer loop: scalar $\bar K$ via tatonnement.
-  \item L5 outer loop: path $\{K_t\}$ via tatonnement.
-  \item L7 outer loop: four ALM coefficients via OLS.
-\end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{内层。}固定 ALM 下的标准 4D VFI；包负责繁重工作，无 K--S 特定逻辑。
-
-\smallskip
-
-\textbf{外层。}新东西：模拟、回归、迭代。
-
-\smallskip
-
-对照：
-\begin{itemize}
-  \item L4 外层：对 $\bar K$ 做 tatonnement。
-  \item L5 外层：对路径 $\{K_t\}$ 做 tatonnement。
-  \item L7 外层：用 OLS 更新四个 ALM 系数。
-\end{itemize}
-\end{column}
-\end{columns}
-\end{frame}
-
-
 % =============================================================
-\section[Break]{Break / 中场休息}
+\section[Implementing K--S]{Implementing K--S}
 % =============================================================
 
-\begin{frame}{Break \\ 中场休息}
-\begin{center}
-\Huge 10 min
-\end{center}
-\vspace{1em}
-\begin{center}
-\large After the break: the K--S algorithm in code.
-\end{center}
-\begin{center}
-\large 休息后：K--S 算法的代码实现。
-\end{center}
-\end{frame}
+\begin{frame}{Parameters}
 
-
-% =============================================================
-\section[Implementing K--S]{Implementing K--S / 代码实现}
-% =============================================================
-
-\begin{frame}{Parameters \\ 参数}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
 \textbf{Canonical K--S calibration} (1998):
+
 \begin{itemize}
   \item $\beta = 0.96$, $\gamma = 1$ (log utility), $\alpha = 0.36$, $\delta = 0.025$.
   \item $Z \in \{0.99, 1.01\}$ with $P_Z$ persistent ($0.875$ on-diagonal).
-  \item $y \in \{0.07, 1.0\}$.
+  \item $z \in \{0.07, 1.0\}$.
 \end{itemize}
 
 \smallskip
 
 \textbf{Grids} (small, for pedagogical speed):
+
 \begin{itemize}
   \item $N_w = 80$ on log-spaced $[0, 80]$.
   \item $N_K = 5$ on linear $[10.5, 14.5]$.
   \item Cell count: $80 \times 2 \times 2 \times 5 = 1600$.
 \end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{经典 K--S 标定}（1998）：
+
+\end{frame}
+
+\begin{frame}{Setup: K-grid center at $Z = 1$}
+
+Before the K--S iteration starts we need:
+
 \begin{itemize}
-  \item $\beta = 0.96$、$\gamma = 1$（对数效用）、$\alpha = 0.36$、$\delta = 0.025$。
-  \item $Z \in \{0.99, 1.01\}$，$P_Z$ 高持续（对角 $0.875$）。
-  \item $y \in \{0.07, 1.0\}$。
+  \item $\bar K$, the K-grid center (the agent's belief set).
+  \item $\Lambda_0$, the initial wealth distribution for the simulation.
 \end{itemize}
 
 \smallskip
 
-\textbf{网格}（教学速度，刻意取小）：
-\begin{itemize}
-  \item $N_w = 80$，对数网格 $[0, 80]$。
-  \item $N_K = 5$，线性网格 $[10.5, 14.5]$。
-  \item Cell 数：$80 \times 2 \times 2 \times 5 = 1600$。
-\end{itemize}
-\end{column}
-\end{columns}
+Both come from the \textbf{deterministic Aiyagari SS at $Z = 1$} --- the L4 tatonnement applied with $Z$ held fixed at the midpoint of $\{Z_{\text{bad}}, Z_{\text{good}}\}$. The 2D household block (no $Z$, no $K$ in the state) closes the loop on $K$ alone.
+
+\smallskip
+
+Tatonnement converges in ${\sim}10$ iterations to $\bar K \approx 13$ on this grid.
+
 \end{frame}
 
-\begin{frame}[fragile]{State layout \\ 状态空间}
+\begin{frame}[fragile]{State layout}
 \begin{lstlisting}
 layout = StateLayout(
     StateAxis(:wealth, continuous_grid(p.w_min, p.w_max;
-                                       length = p.N_w, spacing = :log)),
-    StateAxis(:income, p.y_grid),
+                                       length=p.N_w, spacing=:log)),
+    StateAxis(:z,      p.z_grid),
     StateAxis(:Z_idx,  [1, 2]),
-    StateAxis(:K,      continuous_grid(p.K_min, p.K_max;
-                                       length = p.N_K, spacing = :linear)),
+    StateAxis(:K,      continuous_grid(p.K_min, p.K_max; length=p.N_K)),
 )
 \end{lstlisting}
 
 \vspace{0.4em}
 
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
 \begin{itemize}
-  \item Two continuous axes (\texttt{:wealth}, \texttt{:K}), two categorical (\texttt{:income}, \texttt{:Z\_idx}).
+  \item Two continuous axes (\texttt{:wealth}, \texttt{:K}), two categorical (\texttt{:z}, \texttt{:Z\_idx}).
   \item Same layout the simulator will use, modulo the chain we run on it.
 \end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item 两连续维（\texttt{:wealth}、\texttt{:K}），两离散维。
-  \item 模拟时复用此 layout，仅运行的链不同。
-\end{itemize}
-\end{column}
-\end{columns}
+
 \end{frame}
 
-\begin{frame}[fragile]{Stages 1--2: IncomeShock and IncomeReceipt \\ Stage 1--2}
+\begin{frame}[fragile]{Stages 1--2: z\_shock and income \\ Stage 1--2}
 \begin{lstlisting}
-income_shock = MarkovStage(layout; axis = :income, transition = p.P_y)
+z_shock = MarkovStage(layout; axis=:z, transition=p.P_z)
 
-income_receipt = WealthChangeStage(layout;
-    wealth_axis = :wealth,
-    wealth_post = (cell; env) -> begin
+income = WealthChangeStage(layout;
+    wealth_post=(cell; env) -> begin
         Z  = p.Z_vals[cell.Z_idx]
         pr = ks_prices(cell.K, Z, p)
-        (1 + pr.r) * cell.wealth + pr.w * cell.income
+        (1 + pr.r) * cell.wealth + pr.w * cell.z
     end,
 )
 \end{lstlisting}
 
-\textbf{Note.} The receipt closure reads $(Z, K)$ \emph{from the cell coordinates}, not from \texttt{env}. So prices vary across cells \emph{within} a single solve.
+\textbf{Note.} The income closure reads $(Z, K)$ \emph{from the cell coordinates}, not from \texttt{env}. So prices vary across cells \emph{within} a single solve.
 
-\textbf{注意。}receipt 闭包从 cell 坐标读 $(Z, K)$，而非 \texttt{env}；价格在\emph{同一次}求解内随 cell 变化。
 \end{frame}
 
 \begin{frame}[fragile]{Stage 3: ConsumptionSavings \\ Stage 3}
 \begin{lstlisting}
 savings = ConsumptionSavingsStage(layout;
-    β = p.β,
-    utility = (cell, c; env) -> u_crra(c, Val(p.γ)),
-    wealth_axis = :wealth,
-    monotone_search = :divide_conquer,
+    β=p.β,
+    utility=(cell, c; env) -> u_crra(c, Val(p.γ)),
+    monotone_search=:divide_conquer,
 )
 \end{lstlisting}
 
 \vspace{0.4em}
 
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
 \begin{itemize}
   \item Same stage as Aiyagari / spatial.
   \item Utility is per-cell --- but here only depends on $c$.
   \item Divide-and-conquer search exploits monotonicity in wealth.
 \end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item 与 Aiyagari / 空间一致。
-  \item 此处效用仅依赖 $c$。
-  \item 分治搜索利用财富方向的单调性。
-\end{itemize}
-\end{column}
-\end{columns}
+
 \end{frame}
 
-\begin{frame}[fragile]{Stages 4--5: KEvolve and ZShock \\ Stage 4--5}
+\begin{frame}[fragile]{Stages 4--5: K\_evolve and Z\_shock \\ Stage 4--5}
 \begin{lstlisting}
 K_evolve = WealthChangeStage(layout;
-    wealth_axis = :K,
-    wealth_post = (cell; env) -> begin
+    wealth_axis=:K,
+    wealth_post=(cell; env) -> begin
         a0 = env.a0[cell.Z_idx]
         a1 = env.a1[cell.Z_idx]
         exp(a0 + a1 * log(cell.K))
     end,
 )
 
-Z_shock = MarkovStage(layout; axis = :Z_idx, transition = p.P_Z)
+Z_shock = MarkovStage(layout; axis=:Z_idx, transition=p.P_Z)
 \end{lstlisting}
 
-\textbf{KEvolve} is a \emph{deterministic} mass-redistribution stage on \texttt{:K}, reading the ALM coefficients from \texttt{env}.
+\textbf{K\_evolve} is a \emph{deterministic} mass-redistribution stage on \texttt{:K}, reading the ALM coefficients from \texttt{env}. \texttt{WealthChangeStage} isn't only for wealth --- it redistributes mass along any continuous axis; here we use it on \texttt{:K}.
 
-\textbf{KEvolve} 是 \texttt{:K} 上的\emph{确定性}质量再分配 stage，从 \texttt{env} 读 ALM 系数。
 \end{frame}
 
-\begin{frame}[fragile]{Compose; declare moments \\ 组链；声明矩}
+\begin{frame}[fragile]{Compose; declare moments}
 \begin{lstlisting}
-chain = income_shock ∘ income_receipt ∘ savings ∘ K_evolve ∘ Z_shock
+chain = z_shock ∘ income ∘ savings ∘ K_evolve ∘ Z_shock
 
 hh = define_moments!(chain;
-    K_supplied = at_end(integrand = :wealth, reduce = sum))
+    K_supplied=at_end(integrand=:wealth, reduce=sum))
 \end{lstlisting}
 
 \vspace{0.4em}
 
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
 \begin{itemize}
   \item \texttt{K\_supplied} sums $b$ over the end-of-period $\Lambda$ --- the integral that appears in the K-S iteration.
   \item Used for the deterministic Aiyagari SS at $Z = 1$ \emph{and} for diagnostics during the K-S loop.
 \end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item \texttt{K\_supplied} 对期末 $\Lambda$ 沿 $b$ 求和 —— K-S 迭代中要用的积分。
-  \item 用于 $Z=1$ 的确定性 Aiyagari 稳态\emph{以及} K-S 循环的诊断。
-\end{itemize}
-\end{column}
-\end{columns}
+
 \end{frame}
 
-\begin{frame}[fragile]{Inner solve: VFI at a candidate ALM \\ 内层：给定 ALM 解 VFI}
+\begin{frame}[fragile]{Inner solve: VFI at a candidate ALM}
 \begin{lstlisting}
 a0_init = [log(K_bar), log(K_bar)]
 a1_init = [0.0,        0.0]
-env0    = make_env(hh; a0 = a0_init, a1 = a1_init)
+env0    = make_env(hh; a0=a0_init, a1=a1_init)
 
 ss = solve_steady_state_given_env!(hh, env0;
-                                   lambda_tol = 1e-5,
-                                   lambda_maxiter = 50_000)
+                                   lambda_tol=1e-5,
+                                   lambda_maxiter=50_000)
 \end{lstlisting}
 
 \textbf{First guess.} A \emph{constant} ALM: $K_{t+1} = \bar K$ for both $Z$ states ($a_1 \equiv 0$, $a_0 \equiv \log \bar K$).
 
 \textbf{Cost.} ~400 inner VFI iterations on the 1600-cell grid.
-
-\textbf{首猜。}常数 ALM：两 $Z$ 状态均设 $K_{t+1} = \bar K$。
-
-\textbf{开销。}约 400 次内层 VFI（1600 cells）。
 \end{frame}
 
-\begin{frame}{Simulation: why a separate chain \\ 模拟：为什么要单独的链}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
+\begin{frame}{Simulation: why a separate chain}
+
 When we simulate we want \emph{realised} $(Z_t, K_t)$, not the agent's belief.
 
 \smallskip
 
-The chain's KEvolve and ZShock encode the \emph{belief}: they would push $K$ along the ALM and $Z$ along $P_Z$, regardless of what actually realised.
+The chain's K\_evolve and Z\_shock encode the \emph{belief}: they would push $K$ along the ALM and $Z$ along $P_Z$, regardless of what actually realised.
 
 \smallskip
 
-\textbf{Solution.} Build a second chain --- just the first three stages (\texttt{IncomeShock} $\circ$ \texttt{IncomeReceipt} $\circ$ \texttt{ConsumptionSavings}) --- and drive its $(Z, K)$ from outside.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-模拟时希望用\emph{实现}的 $(Z_t, K_t)$，而非家庭信念。
+\textbf{Solution.} Build a second chain --- just the first three stages (\texttt{z\_shock} $\circ$ \texttt{income} $\circ$ \texttt{savings}) --- and drive its $(Z, K)$ from outside.
 
-\smallskip
-
-链中的 KEvolve 与 ZShock 编码\emph{信念}：会按 ALM 推 $K$、按 $P_Z$ 推 $Z$，不顾实际实现。
-
-\smallskip
-
-\textbf{解决。}另建一链 —— 仅前三 stage（\texttt{IncomeShock} $\circ$ \texttt{IncomeReceipt} $\circ$ \texttt{ConsumptionSavings}）—— 从外部驱动它的 $(Z, K)$。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{One simulation step \\ 单步模拟}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-Maintain $\Lambda_t$ as a \emph{2D} distribution on $(b, y)$. Each period:
+\begin{frame}{One simulation step}
+
+Maintain $\Lambda_t$ as a \emph{2D} distribution on $(b, z)$. Each period:
 \begin{enumerate}
-  \item Compute $K_t = \sum_{b, y} b\, \Lambda_t[b, y]$.
+  \item Compute $K_t = \sum_{b, z} b\, \Lambda_t[b, z]$.
   \item Lift $\Lambda_t$ to a 4D distribution concentrated at $(Z_t, K_t)$ --- share-redistributed between the two adjacent K-grid points.
   \item Push the 4D distribution through the sim chain (3 stages).
-  \item Marginalise out $(Z, K)$ to get $\Lambda_{t+1}$ on $(b, y)$.
+  \item Marginalise out $(Z, K)$ to get $\Lambda_{t+1}$ on $(b, z)$.
   \item Draw $Z_{t+1} \mid Z_t$ from $P_Z$.
 \end{enumerate}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-把 $\Lambda_t$ 维持为 $(b, y)$ 上的 \emph{2D} 分布。每期：
-\begin{enumerate}
-  \item 算 $K_t = \sum_{b, y} b\, \Lambda_t[b, y]$。
-  \item 提升 $\Lambda_t$ 到 4D，在 $(Z_t, K_t)$ 处集中 --- 邻近 K-grid 两点按权重分配质量。
-  \item 推 4D 分布过模拟链（3 stage）。
-  \item 在 $(Z, K)$ 上边际化得 $\Lambda_{t+1}$。
-  \item 由 $P_Z$ 抽 $Z_{t+1} \mid Z_t$。
-\end{enumerate}
-\end{column}
-\end{columns}
+
 \end{frame}
 
-\begin{frame}[fragile]{Seating the simulation chain \\ 模拟链的初始化}
+\begin{frame}[fragile]{Seating the simulation chain}
 \begin{lstlisting}
 hh_sim = ks_household_sim(p)
 # Run backward on the sim chain with the converged V_ss as
@@ -954,26 +382,15 @@ backward!(hh_sim, copy(ss.V), (;))
 
 \vspace{0.4em}
 
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
 \begin{itemize}
-  \item The sim chain has no KEvolve/ZShock, so it does not need ALM coefficients in env.
+  \item The sim chain has no K\_evolve/Z\_shock, so it does not need ALM coefficients in env.
   \item \texttt{backward!} fills the savings policy from the inner-solve $V^*$.
   \item Then \texttt{ks\_simulate} can push $\Lambda$ forward.
 \end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item 模拟链无 KEvolve/ZShock，env 无需 ALM 系数。
-  \item \texttt{backward!} 用 $V^*$ 填充储蓄策略。
-  \item 然后 \texttt{ks\_simulate} 即可推 $\Lambda$ 向前。
-\end{itemize}
-\end{column}
-\end{columns}
+
 \end{frame}
 
-\begin{frame}[fragile]{Refit the ALM by OLS \\ 用 OLS 重拟 ALM}
+\begin{frame}[fragile]{Refit the ALM by OLS}
 \begin{lstlisting}
 function regress_ALM(K_path, Z_idx_path, z_idx, window)
     rows = [t for t in window if Z_idx_path[t] == z_idx]
@@ -990,112 +407,76 @@ fit_good = regress_ALM(sim.K_path, sim.Z_idx_path, 2, window_fit)
 
 \textbf{Two regressions} (one per $Z$). Burn-in 500, fit-window the rest.
 
-\textbf{两次回归}（每个 $Z$ 一次）。预热 500 期，余下用于拟合。
 \end{frame}
 
-\begin{frame}[fragile]{The outer loop \\ 外层循环}
+\begin{frame}[fragile]{The outer loop}
 \begin{lstlisting}
-function ks_iterate(p, K_bar, Λ_0; damp = 0.5, tol = 1e-3, maxiter = 15)
+function ks_iterate(p, K_bar, Λ_0; maxiter=15)
     hh, hh_sim = ks_household(p), ks_household_sim(p)
     a0, a1 = [log(K_bar), log(K_bar)], [0.0, 0.0]
     for it in 1:maxiter
         _ss = solve_steady_state_given_env!(hh, make_env(hh; a0, a1); ...)
         backward!(hh_sim, copy(_ss.V), (;))
-        sim = ks_simulate(hh_sim, p, T_sim; Λ_init = Λ_0, Z_init_idx = 1)
+        sim = ks_simulate(hh_sim, p, T_sim; Λ_init=Λ_0, Z_init_idx=1)
         fit_b = regress_ALM(sim.K_path, sim.Z_idx_path, 1, window_fit)
         fit_g = regress_ALM(sim.K_path, sim.Z_idx_path, 2, window_fit)
         a0_n, a1_n = [fit_b.a0, fit_g.a0], [fit_b.a1, fit_g.a1]
         Δ = maximum(abs.(vcat(a0_n .- a0, a1_n .- a1)))
-        Δ < tol && return (; a0, a1, sim, converged = true, iters = it)
-        a0 = (1 - damp) .* a0 .+ damp .* a0_n
-        a1 = (1 - damp) .* a1 .+ damp .* a1_n
+        Δ < 1e-3 && return (; a0, a1, sim, iters=it)
+        a0 = 0.5 .* a0 .+ 0.5 .* a0_n
+        a1 = 0.5 .* a1 .+ 0.5 .* a1_n
     end
 end
 \end{lstlisting}
 \end{frame}
 
-\begin{frame}{Running it \\ 运行}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
+\begin{frame}{Running it}
+
 \textbf{Convergence behaviour.}
+
 \begin{itemize}
-  \item Converges in \textbf{13 outer iterations} to $\Delta < 10^{-3}$.
+  \item Converges in \textbf{11 outer iterations} to $\Delta < 10^{-3}$.
   \item Inner VFI: ${\sim}400$ iters each outer round, falling as we approach the fixed point.
-  \item Mean $K$ over the post-burn-in window: ${\approx}\,13.35$.
+  \item Mean $K$ over the post-burn-in window: ${\approx}\,13.70$.
 \end{itemize}
 
 \smallskip
 
-Damping $0.5$ on the coefficient update prevents the first few rounds from overshooting.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{收敛表现。}
-\begin{itemize}
-  \item \textbf{13 轮外迭代}收敛到 $\Delta < 10^{-3}$。
-  \item 内层 VFI 约 400 轮每外轮，接近不动点时下降。
-  \item 预热后窗口的 $K$ 均值 $\approx 13.35$。
-\end{itemize}
+An update speed of $0.5$ on the coefficient update prevents the first few rounds from overshooting.
 
-\smallskip
-
-外层系数更新阻尼 $0.5$，避免最初几轮过冲。
-\end{column}
-\end{columns}
 \end{frame}
 
-
 % =============================================================
-\section[Accuracy]{The Accuracy Debate / 准确性辩论}
+\section[Accuracy]{The Accuracy Debate}
 % =============================================================
 
-\begin{frame}{The converged ALM \\ 收敛 ALM}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-After 13 outer iterations:
+\begin{frame}{The converged ALM}
+
+After 11 outer iterations:
 \[
-  \log K_{t+1} = 0.31 + 0.88\, \log K_t \quad (Z = \text{bad}),
+  \log K_{t+1} = 0.18 + 0.93\, \log K_t \quad (Z = \text{bad}),
 \]
 \[
-  \log K_{t+1} = 0.35 + 0.86\, \log K_t \quad (Z = \text{good}).
+  \log K_{t+1} = 0.15 + 0.94\, \log K_t \quad (Z = \text{good}).
 \]
 
 \smallskip
 
-Coefficients on $\log K_t$ are close ($0.88$ vs $0.86$); intercepts differ ($0.31$ vs $0.35$) and pick up the level shift between recession and boom.
+Coefficients on $\log K_t$ are close ($0.93$ vs $0.94$); intercepts differ ($0.18$ vs $0.15$) and pick up the level shift between recession and boom.
 
 \smallskip
 
 Just four numbers describe the dynamics of $K$ across all states of the wealth distribution.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-13 轮外迭代后：
-\[
-  \log K_{t+1} = 0.31 + 0.88\, \log K_t \quad (Z = \text{bad}),
-\]
-\[
-  \log K_{t+1} = 0.35 + 0.86\, \log K_t \quad (Z = \text{good}).
-\]
 
-\smallskip
-
-$\log K_t$ 系数接近（$0.88$ vs $0.86$）；截距差（$0.31$ vs $0.35$）捕捉繁荣-衰退间的水平差。
-
-\smallskip
-
-四个数字描述 $K$ 在所有财富分布状态下的动态。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{The shocking result: $R^2 \approx 1$ \\ 关键结果：$R^2 \approx 1$}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
+\begin{frame}{The shocking result: $R^2 \approx 1$}
+
 The converged ALM regression:
+
 \begin{itemize}
-  \item $Z = \text{bad}$: $R^2 = 0.99850$.
-  \item $Z = \text{good}$: $R^2 = 0.99737$.
+  \item $Z = \text{bad}$: $R^2 = 0.99696$.
+  \item $Z = \text{good}$: $R^2 = 0.99862$.
 \end{itemize}
 
 \smallskip
@@ -1105,124 +486,47 @@ The converged ALM regression:
 \smallskip
 
 \textbf{Implication.} The full distribution $\Lambda_t$ adds no usable information beyond its mean $K_t$. The household that knows only $K_t$ forecasts as well as the household that knew all of $\Lambda_t$.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-收敛 ALM 回归：
-\begin{itemize}
-  \item $Z = \text{bad}$：$R^2 = 0.99850$。
-  \item $Z = \text{good}$：$R^2 = 0.99737$。
-\end{itemize}
 
-\smallskip
-
-\textbf{解读。}$\log K_t$ 的线性函数\emph{几乎完全}解释了每个 $Z$ 状态下 $\log K_{t+1}$ 的变化。
-
-\smallskip
-
-\textbf{含义。}$\Lambda_t$ 在其均值 $K_t$ 之外不提供可用信息。只知 $K_t$ 的家庭与知 $\Lambda_t$ 的家庭预测一样准。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{Approximate aggregation \\ 近似聚合}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\textbf{Property.} $K_t$'s dynamics are described to high accuracy by a function of $(K_t, Z_t)$ alone.
+\begin{frame}{The Den Haan critique}
 
-\textbf{Why here?}
-\begin{itemize}
-  \item Cobb--Douglas + patient agents + CRRA utility.
-  \item Savings policies $b'(b, y; Z, K)$ are \emph{approximately linear} in $b$ in the relevant range.
-  \item Then $K_{t+1} = \int b'\, \mathrm d\Lambda_t$ is determined by $K_t$; higher moments of $\Lambda_t$ near-irrelevant.
-\end{itemize}
-
-Krusell \& Smith (1998), \S3.2.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{性质。}$K_t$ 动态可用 $(K_t, Z_t)$ 的函数高精度刻画。
-
-\textbf{为什么这里成立？}
-\begin{itemize}
-  \item Cobb--Douglas + 耐心主体 + CRRA 效用。
-  \item 储蓄策略 $b'(b, y; Z, K)$ 在相关区间近似线性于 $b$。
-  \item $K_{t+1} = \int b'\, \mathrm d\Lambda_t$ 由 $K_t$ 决定；$\Lambda_t$ 高阶矩几乎无关。
-\end{itemize}
-
-Krusell \& Smith (1998), \S3.2。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{The Den Haan critique \\ Den Haan 批评}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
 $R^2$ averages residuals over many periods --- it can hide \emph{systematic drift}: a small one-step bias compounds over the long run.
 
 \smallskip
 
 \textbf{Den Haan (2010).} A sharper diagnostic. Starting from a common $K_0$:
+
 \begin{itemize}
   \item Compute the true $K_t$ path by aggregating household decisions every period.
   \item Compute an ALM-only path: $K_{t+1} = \exp(a_0(Z_t) + a_1(Z_t) \log K_t)$, no aggregation.
 \end{itemize}
+
 Compare over hundreds of periods.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-$R^2$ 在多期上取均值 --- 可能掩盖\emph{系统漂移}：每期的小偏差长期累积。
 
-\smallskip
-
-\textbf{Den Haan (2010)。}更严格的诊断。给定 $K_0$：
-\begin{itemize}
-  \item 算"真实" $K_t$ 路径：每期真实聚合家庭决策。
-  \item 算"仅 ALM" 路径：$K_{t+1} = \exp(a_0(Z_t) + a_1(Z_t) \log K_t)$，不聚合。
-\end{itemize}
-比较数百期。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{What we see \\ 我们看到了什么}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
+\begin{frame}{What we see}
+
 In this calibration, over 800 post-burn-in periods:
 \[
-  \max_t \left|\frac{K_t^{\text{ALM}} - K_t^{\text{true}}}{K_t^{\text{true}}}\right| \approx 0.28\%.
+  \max_t \left|\frac{K_t^{\text{ALM}} - K_t^{\text{true}}}{K_t^{\text{true}}}\right| \approx 0.81\%.
 \]
 
 \smallskip
 
-The ALM-only path tracks the true path to within a fraction of a percent throughout the simulation.
+The ALM-only path tracks the true path to within about 1\% throughout the simulation.
 
 \smallskip
 
 \textbf{Interpretation.} The bounded-rationality assumption is essentially exact here. K--S agents forecast as well as fully rational ones --- not just on average, but trajectory-by-trajectory.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-本标定下，预热后 800 期内：
-\[
-  \max_t \left|\frac{K_t^{\text{ALM}} - K_t^{\text{true}}}{K_t^{\text{true}}}\right| \approx 0.28\%.
-\]
 
-\smallskip
-
-仅-ALM 路径在整段模拟中偏离真实路径不到 0.3\%。
-
-\smallskip
-
-\textbf{解读。}此处有限理性假设几乎完美 --- K--S 家庭与全理性家庭的预测不止平均一致，逐路径也一致。
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{When K--S works, when it breaks \\ K--S 何时成立、何时失效}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
+\begin{frame}{When K--S works, when it breaks}
+
 \textbf{K--S works} when:
+
 \begin{itemize}
   \item Savings near-linear in wealth.
   \item Agents relatively patient.
@@ -1230,36 +534,18 @@ The ALM-only path tracks the true path to within a fraction of a percent through
 \end{itemize}
 
 \textbf{K--S can break} when:
+
 \begin{itemize}
   \item Occupation choice / extensive-margin entry.
   \item Fat-tailed income shocks.
-  \item Sharp non-CRRA preferences (habits, loss aversion).
-  \item Default with curvature; inequality-shape dynamics.
-\end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{K--S 成立}：
-\begin{itemize}
-  \item 储蓄策略近似线性于财富。
-  \item 主体相对耐心。
-  \item 无大幅 MPC 异质。
+  \item Non-CRRA $u(c)$ (habits, loss aversion).
+  \item Bankruptcy / default.
 \end{itemize}
 
-\textbf{K--S 失效}：
-\begin{itemize}
-  \item 职业选择 / 外延边际进入。
-  \item 收入冲击肥尾。
-  \item 非 CRRA 偏好（习惯、损失厌恶）。
-  \item 含曲率违约；不平等-形状动态。
-\end{itemize}
-\end{column}
-\end{columns}
 \end{frame}
 
-\begin{frame}{What the linear ALM cannot see \\ 线性 ALM 看不到的东西}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
+\begin{frame}{What the linear ALM cannot see}
+
 The ALM compresses $\Lambda_t$ into a scalar. Structural changes that move wealth between agents with different MPCs --- or shift mass between regimes (constrained vs unconstrained) --- without moving $K_t$ much are \emph{invisible} to the ALM.
 
 \smallskip
@@ -1269,85 +555,7 @@ In the baseline calibration these movements happen to have small impact on $K_{t
 \smallskip
 
 \textbf{This is the wedge L8 will exploit.}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-ALM 把 $\Lambda_t$ 压成一个标量。在不同 MPC 主体间挪财富、或在约束 vs 未约束等状态间挪质量，却不大幅改变 $K_t$ 的结构变化，对 ALM \emph{不可见}。
 
-\smallskip
-
-基线下这些移动对 $K_{t+1}$ 影响小；更丰富模型则不然。
-
-\smallskip
-
-\textbf{这正是 L8 要利用的缝隙。}
-\end{column}
-\end{columns}
-\end{frame}
-
-
-% =============================================================
-\section[Wrap]{Wrap / 收尾}
-% =============================================================
-
-\begin{frame}{What we built today \\ 今天搭出了什么}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item Identified the \textbf{state explosion} when aggregate shocks enter HA.
-  \item Adopted the K--S \textbf{bounded-rationality} ansatz: agents see $K_t$, not $\Lambda_t$.
-  \item Postulated a \textbf{log-linear ALM} for $K_{t+1}$ given $(K_t, Z_t)$.
-  \item Iterated VFI $\to$ simulate $\to$ regress to a fixed point.
-  \item Found $R^2 > 0.997$ on the converged ALM, and a Den Haan error $< 0.3\%$.
-\end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item 识别了加入总量冲击带来的\textbf{状态爆炸}。
-  \item 采用 K--S 的\textbf{有限理性}假设：家庭只看 $K_t$、不看 $\Lambda_t$。
-  \item 设定\textbf{对数线性} ALM 预测 $K_{t+1}$。
-  \item 迭代 VFI $\to$ 模拟 $\to$ 回归至不动点。
-  \item 收敛 ALM 的 $R^2 > 0.997$，Den Haan 误差 $< 0.3\%$。
-\end{itemize}
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{Tomorrow: drop the ALM \\ 明日：放弃 ALM}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-The K--S baseline works because the wealth distribution happens to be unimportant. \textbf{What if it weren't?}
-
-\textbf{L8: Continuation Value is All You Need.}
-\begin{itemize}
-  \item Replace $V$ on a grid with a neural net $V_\theta(b, y, Z, K)$.
-  \item Drop the parametric ALM and the regression step.
-  \item Train $V_\theta$ on the Bellman residual --- the "Pooled Bellman" loss.
-\end{itemize}
-
-Same stage chain, different inner solver.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-K--S 基线之所以成立，是因为财富分布"恰好"无关紧要。\textbf{若不然呢？}
-
-\textbf{L8: Continuation Value is All You Need。}
-\begin{itemize}
-  \item 把 $V$ 的网格表换成神经网络 $V_\theta(b, y, Z, K)$。
-  \item 放弃参数化 ALM 与回归步。
-  \item 在 Bellman 残差上训练 $V_\theta$ --- "Pooled Bellman" 损失。
-\end{itemize}
-
-链结构一致，内层求解器变。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{Open Q\&A \\ 自由问答}
-\begin{center}
-\Huge ?
-\end{center}
 \end{frame}
 
 \end{document}

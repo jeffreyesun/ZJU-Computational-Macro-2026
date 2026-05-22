@@ -2,31 +2,22 @@
 \documentclass[10pt,aspectratio=169]{beamer}
 \input{../_shared/preamble.tex}
 
-% Bilingual support (XeLaTeX), matching L02.
 \usepackage{fontspec}
-\usepackage{xeCJK}
 
 \setmainfont{Latin Modern Roman}
 \setsansfont{Latin Modern Sans}
-% DejaVu Sans Mono (not Latin Modern Mono) for the monospace face because
-% LM Mono lacks Greek glyphs — β/γ inside lstlisting and \texttt{} were
-% silently dropped before this change.
+% DejaVu Sans Mono for the monospace face because LM Mono lacks Greek glyphs.
 \setmonofont{DejaVu Sans Mono}[Scale=0.85]
 
-\setCJKmainfont{Noto Sans CJK SC}
-\setCJKsansfont{Noto Sans CJK SC}
-\setCJKmonofont{Noto Sans Mono CJK SC}
-
-% Tighter code listings — the bilingual columns plus the navigation header
-% bar make footnotesize too tall on several frames in this deck.
 \lstset{basicstyle=\ttfamily\scriptsize}
+
 
 % TikZ for the within-period timing diagram.
 \usepackage{tikz}
 \usetikzlibrary{decorations.pathreplacing}
 
-\title{Lecture 3: Policies, Timing, Populations \\ {\large 第三讲：策略、时序、群体}}
-\subtitle{Computational Methods for Heterogeneous-Agent Macro \\ {\large 异质性主体宏观的计算方法}}
+\title{Lecture 3: Policies, Timing, Populations}
+\subtitle{Computational Methods for Heterogeneous-Agent Macro}
 \author{Jeffrey Sun}
 \institute{University of Toronto}
 \date{May 13, 2026}
@@ -35,181 +26,64 @@
 
 \maketitle
 
-
 % =============================================================
-\section{Recap / 回顾}
-% =============================================================
-
-\begin{frame}{Yesterday \\ 昨天}
-  \begin{columns}[T]
-  \begin{column}{0.46\textwidth}
-  Discretized $b$, wrote $\mathcal{T}$ as a Julia function, and iterated $V$ to a fixed point:
-  \[
-    V \;=\; \mathcal{T} V.
-  \]
-
-  \vspace{0.4em}
-
-  $V$ is now a vector on the wealth ($b$) grid.
-  \end{column}
-  \hfill
-  \begin{column}{0.46\textwidth}
-  我们把 $b$ 离散化，把 $\mathcal{T}$ 写成 Julia 函数，并迭代到不动点：
-  \[
-    V \;=\; \mathcal{T} V.
-  \]
-
-  \vspace{0.4em}
-
-  $V$ 现在是财富 ($b$) 网格上的一个向量。
-  \end{column}
-  \end{columns}
-\end{frame}
-
-\begin{frame}{Today \\ 今天}
-  \begin{columns}[T]
-  \begin{column}{0.46\textwidth}
-  \begin{enumerate}
-    \item Get the \emph{policy} $c^\star$ from $V$.
-    \vspace{0.4em}
-    \item Define explicit \textbf{timing}: each period decomposes into three \textbf{stages}.
-    \vspace{0.4em}
-    \item Add Markov process for income and implement with \textbf{matrix multiplication}.
-    \vspace{0.4em}
-    \item Simulate one household, then entire \textbf{population of heterogeneous agents}.
-  \end{enumerate}
-  \end{column}
-  \hfill
-  \begin{column}{0.46\textwidth}
-  \begin{enumerate}
-    \item 从 $V$ 中提取\emph{策略} $c^\star$。
-    \vspace{0.4em}
-    \item 把时序讲清楚：一期可拆成三阶段。
-    \vspace{0.4em}
-    \item 沿某一维施加马尔可夫冲击——一次矩阵乘法。
-    \vspace{0.4em}
-    \item 先模拟一户，再模拟整个群体。
-  \end{enumerate}
-  \end{column}
-  \end{columns}
-\end{frame}
-
-
-% =============================================================
-\section{Policy Function / 策略函数}
+\section{Policy Function}
 % =============================================================
 
-\begin{frame}{Policy Function: $c^\star$ \\ 策略函数 $c^\star$}
+\begin{frame}{Policy Function: $c^\star$}
+  The policy function is the \textbf{argmax} version of the \textbf{max} Bellman operator:
   \begin{align*}
-    V(b)        &\;=\; \max_{c \in [0, b]} \; u(c) + \beta \, V\!\big(R(b - c) + w\big) \tag{Bellman Operator} \\[0.4em]
-    c^\star(b)  &\;=\; \arg\max_{c \in [0, b]} \; u(c) + \beta \, V\!\big(R(b - c) + w\big) \tag{Policy Function}
+    \mathcal{T}v(b)        &\;=\; \max_{c \in [0, b]} \; u(c) + \beta \, v\!\big(R(b - c) + z\big) \tag{Bellman Operator} \\[0.4em]
+    c^\star(b)  &\;=\; \arg\max_{c \in [0, b]} \; u(c) + \beta \, v\!\big(R(b - c) + z\big) \tag{Policy Function}
   \end{align*}
-
-  \begin{columns}[T]
-  \begin{column}{0.46\textwidth}
-  Same right-hand side; the only difference is $\max$ vs.\ $\arg\max$.
-
-  \vspace{0.4em}
-
-  Once $V$ is solved, one $\arg\max$ pass reads off the policy $c^\star$.
-  \end{column}
-  \hfill
-  \begin{column}{0.46\textwidth}
-  右端完全相同，区别仅在 $\max$ 与 $\arg\max$。
-
-  \vspace{0.4em}
-
-  只要求出 $V$，再做一次 $\arg\max$ 就能读出策略 $c^\star$。
-  \end{column}
-  \end{columns}
+  \begin{itemize}
+    \item Once the true $V$ is solved, $\arg\max$ gives you the optimal policy $c^\star$.
+    \item More deeply, any $v$ gives you some policy function.
+    \begin{itemize}
+      \item $v$ can be thought of as representing beliefs about the value of being in various states.
+    \end{itemize}
+  \end{itemize}
 \end{frame}
 
-\begin{frame}{Features of $c^\star$ \\ $c^\star$ 的形态}
-  \begin{columns}[T]
-  \begin{column}{0.46\textwidth}
-  $c^\star(b)$ is \textbf{increasing} (in this and most models): richer households consume more.
+\begin{frame}{Marginal Propensity to Consume (MPC)}
+  The slope $\partial c^\star / \partial b$ is the \textbf{Marginal Propensity to Consume (MPC)}
+  
+  Generally (theoretically and empirically) higher for poorer households, low for rich.
 
-  \vspace{0.4em}
-
-  The slope $\partial c^\star / \partial b$ is the \textbf{Marginal Propensity to Consume (MPC)}: high for poorer households, low for rich.
-  \end{column}
-  \hfill
-  \begin{column}{0.46\textwidth}
-  $c^\star(b)$ \textbf{单调递增}（本模型与大多数模型皆然）：财富越多消费越多。
-
-  \vspace{0.4em}
-
-  斜率 $\partial c^\star / \partial b$ 就是\textbf{边际消费倾向 (MPC)}：贫者高，富者低。
-  \end{column}
-  \end{columns}
+  Can be thought of as a function of how \textbf{constrained} households are.
 \end{frame}
-
 
 % =============================================================
-\section{Timing / 时序}
+\section{Conventions}
 % =============================================================
 
-\begin{frame}{Income Shocks \\ 收入冲击}
-  \begin{columns}[T]
-  \begin{column}{0.46\textwidth}
-  We now add \textbf{income} as a \textbf{state variable}, following a \textbf{Markov process $\Pi$}.
-
-  \vspace{0.4em}
-
-  The \textbf{state} is now $(b, w)$.
-
-  \vspace{0.4em}
-
-  On the computer, each $V$ is now a \textbf{matrix}. Rows are wealth $b$, columns are income $w$.
-  \end{column}
-  \hfill
-  \begin{column}{0.46\textwidth}
-  现在把\textbf{收入}加为一个\textbf{状态变量}，并令其服从一个 \textbf{马尔可夫过程 $\Pi$}。
-
-  \vspace{0.4em}
-
-  \textbf{状态}变为 $(b, w)$。
-
-  \vspace{0.4em}
-
-  在计算机里，每个 $V$ 现在是一个\textbf{矩阵}。行对应财富 $b$，列对应收入 $w$。
-  \end{column}
-  \end{columns}
+\begin{frame}{Conventions}
+  \begin{itemize}
+    \item Now that we have some intuition, let's set up some conventions that will pay off later.
+    \item Think of the state variable $z$ as \textbf{human capital},following a \textbf{Markov process $\Pi$}
+    \item Period income is $zw$, where $w$ is the wage level. For now, we'll normalize $w = 1$.
+    \item The \textbf{state} is now $(b, z)$.
+    \item On computer, each $V$ is now a \textbf{matrix}. Rows are wealth $b$, columns are human capital $z$.
+  \end{itemize}
 \end{frame}
 
-\begin{frame}{Stages \\ 阶段}
-  \begin{columns}[T]
-  \begin{column}{0.46\textwidth}
-  Each \textbf{model feature} can be thought of as a \textbf{stage}:
+\begin{frame}{Stages}  
+  Each \textbf{model feature} can be thought of as a \textbf{Stage}:
   \begin{enumerate}
     \item Income Shock
     \item Income
     \item Consumption-Saving
   \end{enumerate}
-
-  \vspace{0.6em}
-
-  Each stage is a \textbf{simple sub-period}.
-  \end{column}
-  \hfill
-  \begin{column}{0.46\textwidth}
-  可以把每个\textbf{模型特征}视为一个\textbf{阶段}：
-  \begin{enumerate}
-    \item 收入冲击
-    \item 收入
-    \item 消费--储蓄
-  \end{enumerate}
-
-  \vspace{0.6em}
-
-  每个阶段都是一个\textbf{简单的子周期}。
-  \end{column}
-  \end{columns}
+  Each \textbf{Stage} is a \textbf{simple sub-period}.
+  \begin{itemize}
+    \item More on this later, but \textbf{functional composability} of stages is analogous to the \textbf{additive composability} of continuous-time household models.
+    \item This can allow us to build \textbf{complex} models by composing \textbf{Stages}.
+  \end{itemize}
 \end{frame}
 
-\begin{frame}{Within-Period Timeline \\ 期内时序}
+\begin{frame}{Within-Period Timeline}
   \vspace{0.4em}
-  \centering
+  {\centering
   \begin{tikzpicture}[
     every node/.style={font=\footnotesize},
     decoration={brace, mirror, amplitude=4pt},
@@ -227,16 +101,16 @@
     }
 
     % V expressions above each tick
-    \node[above=2pt, font=\scriptsize] at (0, 0.13)         {$V^{\mathrm{start}}(b^{\mathrm{end}}_{t-1},\, w^{\mathrm{end}}_{t-1})$};
-    \node[above=2pt, font=\scriptsize] at ({\seg}, 0.13)    {$V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}_{t-1},\, w_t)$};
-    \node[above=2pt, font=\scriptsize] at ({2*\seg}, 0.13)  {$V(b_t,\, w_t)$};
-    \node[above=2pt, font=\scriptsize] at (\W, 0.13)        {$V^{\mathrm{end}}(b^{\mathrm{end}}_t,\, w_t)$};
+    \node[above=2pt, font=\scriptsize] at (0, 0.13)         {$V^{\mathrm{start}}(b^{\mathrm{end}}_{t-1},\, z^{\mathrm{end}}_{t-1})$};
+    \node[above=2pt, font=\scriptsize] at ({\seg}, 0.13)    {$V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}_{t-1},\, z_t)$};
+    \node[above=2pt, font=\scriptsize] at ({2*\seg}, 0.13)  {$V^{\mathrm{pre\_cons}}(b_t,\, z_t)$};
+    \node[above=2pt, font=\scriptsize] at (\W, 0.13)        {$V^{\mathrm{end}}(b^{\mathrm{end}}_t,\, z_t)$};
 
     % "Beginning of period" annotation: a second row above tick 1
     \node[above=14pt, font=\scriptsize\itshape, align=center] at (0, 0.13)
-      {Beginning of period \\ 期初};
+      {Beginning of period};
     \node[above=14pt, font=\scriptsize\itshape, align=center] at (\W, 0.13)
-      {End of period \\ 期末};
+      {End of period};
 
     % underbraces below segments
     \draw[decorate] (0.08, -0.13) -- ({\seg - 0.08}, -0.13);
@@ -245,448 +119,181 @@
 
     % stage labels under each underbrace
     \node[below=12pt, align=center] at ({\seg/2}, -0.13)
-      {\textbf{Income shock} \\ \textbf{收入冲击} \\[1pt] $w_t \sim \Pi(\cdot \mid w^{\mathrm{end}}_{t-1})$};
+      {\textbf{Income shock}\\[1pt] $z_t \sim \Pi(\cdot \mid z^{\mathrm{end}}_{t-1})$};
     \node[below=12pt, align=center] at ({\W/2}, -0.13)
-      {\textbf{Income} \\ \textbf{收入} \\[1pt] $b_t = R\, b^{\mathrm{end}}_{t-1} + w_t$};
+      {\textbf{Income}\\[1pt] $b_t = R\, b^{\mathrm{end}}_{t-1} + z_t$};
     \node[below=12pt, align=center] at ({5*\seg/2}, -0.13)
-      {\textbf{Consumption-saving} \\ \textbf{消费--储蓄} \\[1pt] $b^{\mathrm{end}}_t = b_t - c^\star(b_t, w_t)$};
+      {\textbf{Consumption-saving}\\[1pt] $b^{\mathrm{end}}_t = b_t - c^\star(b_t, z_t)$};
   \end{tikzpicture}
+  }
+  Each \textbf{Stage} has different \textbf{state variables} and a different \textbf{intermediate value function}.
+
+  We can iterate $V^\text{end}$ backward one stage at a time.
+\end{frame}
+
+\section{Stages}
+
+\begin{frame}{Stage 1 --- Income Shock}
+  \begin{itemize}
+    \item $\Pi_{ij} = \Pr(z_t = j \mid z^{\mathrm{end}}_{t-1} = i)$, row-stochastic.
+    \item \textbf{Backward} (value functions).
+  \end{itemize}
+  \[
+    V^{\mathrm{start}} \;=\; V^{\mathrm{pre\_inc}} \, \Pi^\top.
+  \]
+  Each $(b^{\mathrm{end}}, z^{\mathrm{end}}_{t-1})$ entry of $V^{\mathrm{start}}$ is an expectation over $z_t$ given $z^{\mathrm{end}}_{t-1}$.
+
+  (Note: To see why matrix multiplication can represent backwards-iteration of $V$ through a Markov chain, see standard references on Markov chains.)
+\end{frame}
+
+\begin{frame}{Stage 2 --- Income}
+  This stage just represents the \textbf{receipt} of income,
+  \[
+    b_t = R \, b^{\mathrm{end}}_{t-1} + z_t,
+  \]
+  effectively a change-of-variables.
+
+  Explicitly, the backwards step is,
+  \begin{align*}
+    V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}_{t-1}, z)
+    \; &= \; V\!\big(R\, b^{\mathrm{end}}_{t-1} + z,\; z\big).
+  \end{align*}
+
+  In the example code, we do this by \textbf{reinterpolating} $V$ at the new points $R\, b^{\mathrm{end}}_{t-1} + z$.
+\end{frame}
+
+\begin{frame}{Stage 3 --- Consumption-Saving}
+  This stage represents the argmax step,
+  \[
+    b^{\mathrm{end}}_t \;=\; b_t - c^\star(b_t, z_t).
+  \]
+  Explicitly, the backwards step is,
+  \[
+    V(b, z) \;=\; \max_{b^{\mathrm{end}} \in b_{\mathrm{grid}}} u(b - b^{\mathrm{end}}) + \beta V^{\mathrm{end}}(b^{\mathrm{end}}, z).
+  \]
+  
+  Here, we fold in the time discounting by $\beta$ in the consumption-saving stage, but in general it can be thought of as really a separate stage.
+\end{frame}
+
+\begin{frame}[fragile]{Backwards Iteration}
+  \begin{lstlisting}
+    function bellman_operator(V_end, params)
+      (; β) = params
+      # Stage 3
+      V_pre_cons = consumption_saving_backward(V_end, params)
+
+      # Stage 2
+      V_pre_inc = income_backward(V_pre_cons, params)
+
+      # Stage 1
+      V_start = income_shock_backward(V_pre_inc, params)
+
+      # Passage of time
+      V_end_new = β .* V_start
+      return V_end_new
+  end
+  \end{lstlisting}
+  Backwards iteration of $V$ is just \textbf{functional composition} of the backwards-iteration functions of each stage.
+\end{frame}
+
+% =============================================================
+\section{Simulating a Population}
+% =============================================================
+
+\begin{frame}{Heterogeneity for (Almost) Free}
+  \begin{itemize}
+    \item We have been thinking of $V$ and $c^*$ as the value and policy of a single household at different \textbf{possible} states.
+    \item But we can also think of $V$ and $c^*$ as the value and policy of \textbf{contemporaneous} households in a \textbf{population} with different idiosyncratic states.
+    \item Since we have already computed $V$ on the whole grid, this lets us add heterogeneity very cheaply.
+    \item We just need to think about how to \textbf{represent} and \textbf{simulate} a population of households.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{A Population is a Vector (or Matrix)}
+  We can represent the \emph{population} as a discrete distribution $\lambda$ over the wealth grid:
+  \[
+    \lambda_i \;=\; \text{share of households at } b_i.
+  \]
+  That is, just like $V$, it is a vector (or a matrix) over the discretized state space.
+
+  (Note: Matrices are vectors.)
+\end{frame}
+
+\begin{frame}{Aggregate Moments}
+  \begin{itemize}
+    \item Aggregate welfare is then an inner product: $\bar{V} = \sum_i V(b_i) \, \lambda_i$. Same for $\bar{C}$, $\bar{K}$, etc.
+    \item Indeed, \textbf{any} moment of the distribution (e.g. aggregate capital, consumption, etc.) can be thought of as an inner product against $\lambda$.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Forward and Backward, All Three Stages}
+  \footnotesize
+  \setlength{\tabcolsep}{6pt}
+  \renewcommand{\arraystretch}{1.45}
+  \begin{tabular}{@{}l l l@{}}
+  \toprule
+  & \textbf{Backward} (value) & \textbf{Forward} (distribution) \\
+  \midrule
+  \textbf{Stage 1}    & $V^{\mathrm{start}} = V^{\mathrm{pre\_inc}}\, \Pi^\top$
+                      & $\lambda^{\mathrm{post}} = \lambda^{\mathrm{pre}}\, \Pi$ \\
+  \textbf{Stage 2}    & $V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}, z) = V^\text{pre\_cons}(R\, b^{\mathrm{end}} + z,\, z)$
+                      & $(b^{\mathrm{end}}, z) \to (R\, b^{\mathrm{end}} + z,\, z)$ \\
+  \textbf{Stage 3}    & $V^\text{pre\_cons}(b, z) = \max\limits_{b^{\mathrm{end}}} u(b - b^{\mathrm{end}}) + V^{\mathrm{end}}(b^{\mathrm{end}}, z)$
+                      & $(b, z) \to \big(b - c^\star(b, z),\, z\big)$ \\
+  \midrule
+  \textbf{Dynamic Boundary Condition}   & $V^{\mathrm{end}_t} = \beta\, V^{\mathrm{start}}_{t+1}$
+                      & $\Lambda^\text{start}_t = \Lambda^\text{end}_{t+1}$ \\
+  \textbf{Steady State}   & $V^{\mathrm{end}} = \beta\, V^{\mathrm{start}}$
+                      & $\Lambda^\text{start} = \Lambda^\text{end}$ \\
+  \bottomrule
+  \end{tabular}
 
   \vspace{0.8em}
 
   \footnotesize
-  \begin{columns}[T]
-  \begin{column}{0.46\textwidth}
-  Each \textbf{stage} has different \textbf{state variables} and a different \textbf{intermediate value function}.
+  Backward: $V^{\mathrm{end}} \to V^\text{pre\_cons} \to V^{\mathrm{pre\_inc}} \to V^{\mathrm{start}}$.
 
-  Because stages are \textbf{simple}, we can use them to build \textbf{complex} models.
-  \end{column}
-  \hfill
-  \begin{column}{0.46\textwidth}
-  每个\textbf{阶段}有不同的\textbf{状态变量}与不同的\textbf{中间价值函数}。正因阶段\textbf{简单}，我们才能用它们搭出\textbf{复杂}模型。
-  \end{column}
-  \end{columns}
+  Forward: $\Lambda^\text{start} \to \Lambda^\text{pre\_inc} \to \Lambda^\text{pre\_cons} \to \Lambda^\text{end}$.
 \end{frame}
 
-\begin{frame}{Stage 1 --- Income Shock \\ 第一阶段：收入冲击}
-$\Pi_{ij} = \Pr(w_t = j \mid w^{\mathrm{end}}_{t-1} = i)$, row-stochastic.
+\begin{frame}[fragile]{Stage 1: Markov Income Shock}
+  Forward:
+  \begin{lstlisting}
+  # λ is an N_b × N_z matrix: rows index wealth, columns index z state.
+  # Markov along the z dimension is a single matrix multiplication.
+  result = λ * P_z
+  \end{lstlisting}
 
-\vspace{0.8em}
-
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\textbf{Backward} (value functions).
-\[
-  V^{\mathrm{start}} \;=\; V^{\mathrm{pre\_inc}} \, \Pi^\top.
-\]
-
-\vspace{0.6em}
-
-Each $(b^{\mathrm{end}}, w^{\mathrm{end}}_{t-1})$ entry of $V^{\mathrm{start}}$ is an expectation over $w_t$ given $w^{\mathrm{end}}_{t-1}$.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{后向}（价值函数）。
-\[
-  V^{\mathrm{start}} \;=\; V^{\mathrm{pre\_inc}} \, \Pi^\top.
-\]
-
-\vspace{0.6em}
-
-$V^{\mathrm{start}}$ 中每个 $(b^{\mathrm{end}}, w^{\mathrm{end}}_{t-1})$ 项是给定 $w^{\mathrm{end}}_{t-1}$ 时对 $w_t$ 取的期望。
-\end{column}
-\end{columns}
+  \begin{itemize}
+    \item The mass at $(b_i, z_j)$ flows to $(b_i, z_{j'})$ with weight $\Pi_{j j'}$.
+    \item Markov along one dimension is just a matrix multiplication.
+  \end{itemize}
 \end{frame}
 
-\begin{frame}{Why Matrix Multiplication? \\ 为什么是矩阵乘法？}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-Hold $b^{\mathrm{end}}$ fixed. The values
-\[
-  v_j \;\equiv\; V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}, w_j), \qquad j = 1, \ldots, N_w
-\]
-form a length-$N_w$ vector.
-
-\vspace{0.5em}
-
-The Markov expectation is, by definition,
-\[
-  V^{\mathrm{start}}(b^{\mathrm{end}}, w_i) \;=\; \sum_j \Pi_{ij}\, v_j.
-\]
-
-\vspace{0.4em}
-
-That is exactly the $i$-th component of $\Pi\, v$ — a matrix--vector product.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-固定 $b^{\mathrm{end}}$。值
-\[
-  v_j \;\equiv\; V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}, w_j), \qquad j = 1, \ldots, N_w
-\]
-构成一个长度 $N_w$ 的向量。
-
-\vspace{0.5em}
-
-由马尔可夫期望的定义，
-\[
-  V^{\mathrm{start}}(b^{\mathrm{end}}, w_i) \;=\; \sum_j \Pi_{ij}\, v_j.
-\]
-
-\vspace{0.4em}
-
-这正是 $\Pi\, v$ 的第 $i$ 个分量——一次矩阵--向量乘积。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{All Wealth Rows at Once \\ 所有财富同时算}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-Stack the per-$b^{\mathrm{end}}$ vectors: $V^{\mathrm{pre\_inc}}$ is an $N_b \times N_w$ matrix.
-
-\vspace{0.5em}
-
-The Markov transition acts \emph{identically} on each row, so the same trick applies in batch:
-\[
-  V^{\mathrm{start}} \;=\; V^{\mathrm{pre\_inc}} \, \Pi^\top.
-\]
-
-\vspace{0.4em}
-
-One matrix multiply updates every wealth row.
-
-\vspace{0.5em}
-
-\textbf{Markov along one dimension is a single matrix multiplication.}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-将每个 $b^{\mathrm{end}}$ 对应的向量堆叠：$V^{\mathrm{pre\_inc}}$ 是 $N_b \times N_w$ 矩阵。
-
-\vspace{0.5em}
-
-马尔可夫转移对每一行的作用\emph{完全相同}，于是可以批量处理：
-\[
-  V^{\mathrm{start}} \;=\; V^{\mathrm{pre\_inc}} \, \Pi^\top.
-\]
-
-\vspace{0.4em}
-
-一次矩阵乘法即可更新所有财富行。
-
-\vspace{0.5em}
-
-\textbf{沿一维做马尔可夫就是一次矩阵乘法。}
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{Stage 2 --- Income \\ 第二阶段：收入}
-$b_t \;=\; R \, b^{\mathrm{end}}_{t-1} + w_t$.
-
-\vspace{0.8em}
-
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\textbf{Backward} (value functions).
-\begin{align*}
-  V^{\mathrm{pre\_inc}}(b^{\mathrm{end}_{t-1}}, w)
-   \; &= \; V\!\big(R\, b^{\mathrm{end}_{t-1}} + w,\; w\big)\\
-  V^{\mathrm{pre\_inc}}((b-w)/R, w)
-   \; &= \; V\!\big(b, w\big)
-\end{align*}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{后向}（价值函数）。
-\begin{align*}
-  V^{\mathrm{pre\_inc}}(b^{\mathrm{end}_{t-1}}, w)
-   \; &= \; V\!\big(R\, b^{\mathrm{end}_{t-1}} + w,\; w\big)\\
-  V^{\mathrm{pre\_inc}}((b-w)/R, w)
-   \; &= \; V\!\big(b, w\big)
-\end{align*}
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{Stage 3 --- Consumption-Saving \\ 第三阶段：消费--储蓄}
-$b^{\mathrm{end}}_t \;=\; b_t - c^\star(b_t, w_t)$.
-
-\vspace{0.8em}
-
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\textbf{Backward} (value functions). Grid search over $b^{\mathrm{end}}$:
-\[
-  V(b, w) \;=\; \max_{b^{\mathrm{end}} \in b_{\mathrm{grid}}} u(b - b^{\mathrm{end}}) + V^{\mathrm{end}}(b^{\mathrm{end}}, w).
-\]
-
-\vspace{0.6em}
-
-\textit{Period boundary:} $V^{\mathrm{end}} = \beta\, V^{\mathrm{start}}$.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\textbf{后向}（价值函数）。在 $b^{\mathrm{end}}$ 上做网格搜索：
-\[
-  V(b, w) \;=\; \max_{b^{\mathrm{end}} \in b_{\mathrm{grid}}} u(b - b^{\mathrm{end}}) + V^{\mathrm{end}}(b^{\mathrm{end}}, w).
-\]
-
-\vspace{0.6em}
-
-\textit{期界过渡：} $V^{\mathrm{end}} = \beta\, V^{\mathrm{start}}$。
-\end{column}
-\end{columns}
-\end{frame}
-
-% =============================================================
-\section{A Population is a Vector / 群体即向量}
-% =============================================================
-
-\begin{frame}{A Population is a Vector \\ 群体即向量}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-The same $c^\star$ is the rule for every household at every wealth level.
-
-\vspace{0.4em}
-
-So we can think of a \emph{population} as a distribution $\lambda$ on the wealth grid:
-\[
-  \lambda_i \;=\; \text{share of households at } b_i.
-\]
-
-\vspace{0.4em}
-
-A population is just a vector — same shape as $V$, same shape as $c^\star$.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-对任何家庭、任何财富水平，$c^\star$ 都给出同一条规则。
-
-\vspace{0.4em}
-
-于是可以把\emph{群体}视为财富网格上的一个分布 $\lambda$：
-\[
-  \lambda_i \;=\; \text{处于 } b_i \text{ 的家庭占比}.
-\]
-
-\vspace{0.4em}
-
-群体就是一个向量——与 $V$、$c^\star$ 同形状。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{$V$ Is Also Cross-Sectional Welfare \\ $V$ 也是横截面福利}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-$V(b_i)$ has two readings:
-\begin{itemize}
-  \item the value to \emph{one} household if its wealth were $b_i$;
-  \item the current welfare of the households who actually have $b_i$.
-\end{itemize}
-
-\vspace{0.4em}
-
-Aggregate welfare is then an inner product: $\bar{V} = \sum_i V(b_i) \, \lambda_i$. Same for $\bar{C}$, $\bar{K}$, etc.
-
-\vspace{0.5em}
-
-\textbf{One $V$, two uses.} Solve once, get aggregates for free.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-$V(b_i)$ 有两种读法：
-\begin{itemize}
-  \item 设想\emph{一个}家庭的财富是 $b_i$，则其价值；
-  \item 实际财富为 $b_i$ 的那群家庭当下的福利。
-\end{itemize}
-
-\vspace{0.4em}
-
-总福利就是一次内积：$\bar{V} = \sum_i V(b_i) \, \lambda_i$。$\bar{C}$、$\bar{K}$ 等类推。
-
-\vspace{0.5em}
-
-\textbf{一个 $V$，两种用途。} 解一次，所有总量都送上门。
-\end{column}
-\end{columns}
+\begin{frame}[fragile]{\texttt{simulate\_population}}
+  \begin{lstlisting}
+  function simulate_population(b_inds_new, params, λ_0; T = 200)
+      path, cur = [copy( λ_0)], copy( λ_0)
+      for t in 1:T
+          cur = income_shock_forward(cur, params.P_z)                  # Stage 1
+          cur = income_forward(cur, params)                            # Stage 2
+          cur = consumption_saving_forward(cur, b_inds_new, params)    # Stage 3
+          push!(path, copy(cur))
+      end
+      return path
+  end
+  \end{lstlisting}
+  Forward simulation is just \textbf{functional composition} of the forward-simulation functions of each stage.
 \end{frame}
 
 
-% =============================================================
-\section{Simulating a Population / 群体模拟}
-% =============================================================
-
-\begin{frame}{Forward and Backward, All Three Stages \\ 前向与后向：三阶段汇总}
-\footnotesize
-\setlength{\tabcolsep}{6pt}
-\renewcommand{\arraystretch}{1.45}
-\begin{tabular}{@{}l l l@{}}
-\toprule
-& \textbf{Backward} (value) & \textbf{Forward} (distribution) \\
-\midrule
-\textbf{Stage 1}    & $V^{\mathrm{start}} = V^{\mathrm{pre\_inc}}\, \Pi^\top$
-                    & $\lambda^{\mathrm{post}} = \lambda^{\mathrm{pre}}\, \Pi$ \\
-\textbf{Stage 2}    & $V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}, w) = V(R\, b^{\mathrm{end}} + w,\, w)$
-                    & $(b^{\mathrm{end}}, w) \to (R\, b^{\mathrm{end}} + w,\, w)$ \\
-\textbf{Stage 3}    & $V(b, w) = \max\limits_{b^{\mathrm{end}}} u(b - b^{\mathrm{end}}) + V^{\mathrm{end}}(b^{\mathrm{end}}, w)$
-                    & $(b, w) \to \big(b - c^\star(b, w),\, w\big)$ \\
-\midrule
-\textbf{Boundary}   & $V^{\mathrm{end}} = \beta\, V^{\mathrm{start}}$
-                    & --- \\
-\bottomrule
-\end{tabular}
-
-\vspace{0.8em}
-
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\footnotesize Backward: VFI iterates $V^{\mathrm{end}} \to V \to V^{\mathrm{pre\_inc}} \to V^{\mathrm{start}}$, then loops. Forward: the population's $\lambda$ traces the same three stages in time order.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\footnotesize 后向：VFI 沿 $V^{\mathrm{end}} \to V \to V^{\mathrm{pre\_inc}} \to V^{\mathrm{start}}$ 迭代后再循环。前向：群体 $\lambda$ 按时间顺序经历同样的三个阶段。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}[fragile]{One Markov Step Along the Income Dimension \\ 沿收入维做一步马尔可夫}
-\begin{lstlisting}
-# λ is an N_b × N_w matrix: rows index wealth, columns index income state
-# applying Π along the income dimension is a single matrix multiplication:
-λ_new = λ * Π
-\end{lstlisting}
-
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-The mass at $(b_i, w_j)$ flows out to $(b_i, w_{j'})$ with weight $\Pi_{j j'}$.
-
-\vspace{0.4em}
-
-Wealth doesn't move in this step — that's Stages 2 and 3.
-
-\vspace{0.4em}
-
-\textbf{Markov along one dimension is just a matrix multiplication.} We'll use this trick repeatedly in later lectures.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-$(b_i, w_j)$ 处的质量按权重 $\Pi_{j j'}$ 流向 $(b_i, w_{j'})$。
-
-\vspace{0.4em}
-
-财富在这一步不动——那是第二、第三阶段的事。
-
-\vspace{0.4em}
-
-\textbf{沿一维做马尔可夫就是一次矩阵乘法。} 这个套路后面会反复用到。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}[fragile]{\texttt{simulate\_population} / 群体模拟}
-\begin{lstlisting}
-function simulate_population(c_inds, params, λ_0; T = 200)
-    λ_path, λ = [copy(λ_0)], copy(λ_0)
-    for t in 1:T
-        λ = income_shock_forward(λ, params.Π)             # Stage 1
-        λ = income_forward(λ, params)                      # Stage 2
-        λ = consumption_saving_forward(λ, c_inds, params)  # Stage 3
-        push!(λ_path, copy(λ))
-    end
-    return λ_path
-end
-\end{lstlisting}
-
-\footnotesize
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-One forward step is just the three named stage functions composed in order. Stage 1 is a matrix multiply on the income dimension; Stages 2 and 3 are pure index moves --- cash-on-hand assembly, then policy lookup. No lotteries.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-一次前向就是按顺序复合三个阶段函数。第一阶段是收入维上的矩阵乘法；第二、第三阶段都是纯下标移动——先装配现金，再查策略。不用抽奖。
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{The Long-Run Distribution \\ 长期分布}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-Apply the forward step over and over. After enough periods the distribution $\lambda$ stops changing.
-
-\vspace{0.5em}
-
-The limit distribution $\lambda^\star$ describes the long-run population. Once we have it, aggregates are just inner products with $b$, $V$, $c^\star$, etc.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-反复施加一步前向算子。期数足够多后，$\lambda$ 不再变化。
-
-\vspace{0.5em}
-
-极限分布 $\lambda^\star$ 描述了群体的长期形态。有了它，总量就是与 $b$、$V$、$c^\star$ 等做内积。
-\end{column}
-\end{columns}
-\end{frame}
-
-
-% =============================================================
-\section{Recap / 回顾}
-% =============================================================
-
-\begin{frame}{Recap \\ 回顾}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item $c^\star$ from $V$: same operator, $\arg\max$ in place of $\max$.
-  \item Each period decomposes into three stages: shock, income, choice.
-  \item Markov along one dimension is a matrix multiplication.
-  \item Once we have $c^\star$ we can roll a single household forward; once we have $V$ we have cross-sectional welfare for free.
-\end{itemize}
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-\begin{itemize}
-  \item 从 $V$ 提取 $c^\star$：算子不变，把 $\max$ 换成 $\arg\max$。
-  \item 一期分三阶段：冲击、收入、决策。
-  \item 沿一维做马尔可夫就是矩阵乘法。
-  \item 有了 $c^\star$ 就能推进个体，有了 $V$ 就免费得到横截面福利。
-\end{itemize}
-\end{column}
-\end{columns}
-\end{frame}
-
-\begin{frame}{Tomorrow: Equilibrium \\ 明天：均衡}
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-So far prices $(R, w)$ have been exogenous. Tomorrow we let prices respond to $\lambda^\star$.
-
-\vspace{0.6em}
-
-That closes the macro loop:
-\[
-  \lambda^\star \;\Longleftrightarrow\; (R, w).
-\]
-
-The result is the Aiyagari model.
-\end{column}
-\hfill
-\begin{column}{0.46\textwidth}
-到目前为止价格 $(R, w)$ 是外生的。明天让价格响应 $\lambda^\star$。
-
-\vspace{0.6em}
-
-宏观回路这就闭合：
-\[
-  \lambda^\star \;\Longleftrightarrow\; (R, w).
-\]
-
-这就是 Aiyagari 模型。
-\end{column}
-\end{columns}
+\begin{frame}{Solving for Steady State}
+  \begin{enumerate}
+    \item Guess $v$ and $\lambda$.
+    \item Iterate $v$ backwards until it converges to $V$.
+    \item Simulate $\lambda$ forward until it converges to $\Lambda$.
+  \end{enumerate}
+  (Note: The conditions under which $\lambda$ converges are subtler than for $V$.)
 \end{frame}
 
 \end{document}
