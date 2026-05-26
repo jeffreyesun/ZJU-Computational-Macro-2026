@@ -7,7 +7,6 @@
 # The outer tatonnement loop — both for the steady-state warm start
 # and for the transition path — is rolled here, because the library
 # deliberately leaves "close-the-model" outer loops to consumers
-# (see `PROJECT_PLAN.md` Decisions log 2026-05-18).
 #
 # Permanent MIT shock: TFP steps from `A_ss = 1` to `A_0 > 1` at t = 1
 # and stays there forever. The economy transitions to a new steady

@@ -71,18 +71,14 @@ make a meaningful warm-start point (it can hold half-iterated state).
 Writes the converged Λ back to the buffer; returns a caller-safe copy.
 """
 function solve_lambda_steady_state_given_env!(stage::AbstractStage;
-                                              Λ_init       = nothing,
-                                              tol::Real    = 1e-6,
-                                              maxiter::Int = 20_000)
-    Λ0 = if Λ_init === nothing
-        _default_Λ_init(stage.spec, stage.buffer)
-    else
-        Λ_init
-    end
+                                              Λ_init=nothing,
+                                              tol::Real=1e-6,
+                                              maxiter::Int=20_000)
+    Λ0 = @something Λ_init _default_Λ_init(stage.buffer)
     res = solve_lambda_steady_state_given_env!(stage.spec, stage.buffer;
-                                               Λ_init = Λ0, tol, maxiter)
+                                               Λ_init=Λ0, tol, maxiter)
     copyto!(Λ_end_buffer(stage), res.Λ)
-    return (; Λ = copy(res.Λ), iters = res.iters, converged = res.converged)
+    return (; Λ=copy(res.Λ), iters=res.iters, converged=res.converged)
 end
 
 
@@ -126,7 +122,7 @@ function solve_steady_state_given_env!(stage::ChainStage, env;
     else
         V_init
     end
-    Λ0 = Λ_init === nothing ? _default_Λ_init(spec, buffer) : Λ_init
+    Λ0 = @something Λ_init _default_Λ_init(buffer)
 
     res = solve_steady_state_given_env!(spec, env, buffer;
                                         V_init = V0, Λ_init = Λ0,
@@ -137,7 +133,7 @@ function solve_steady_state_given_env!(stage::ChainStage, env;
     copyto!(V_start_buffer(stage), V)
     copyto!(Λ_end_buffer(stage),   Λ)
 
-    moments = isempty(spec.moments) ? (;) : compute_moments(spec, Λ, env)
+    moments = isempty(spec.moments) ? (;) : compute_moments(stage, Λ, env)
     return (; V = copy(V), Λ = copy(Λ),
             moments,
             history = (vfi_iters = res.vfi_iters,
@@ -168,9 +164,11 @@ Boundary conditions:
 solve_transition_given_env_path!(stage::ChainStage, env_path::AbstractVector;
                                  Λ_0::AbstractArray,
                                  V_T::AbstractArray,
-                                 max_inner_iters::Int = 1) =
+                                 max_inner_iters::Int=1) =
     solve_transition_given_env_path!(stage.spec, env_path;
-                                     Λ_0, V_T, max_inner_iters)
+                                     Λ_0, V_T,
+                                     layout=stage.buffer.input_layout,
+                                     max_inner_iters)
 
 
 # Direct-effect Jacobian — public delegate #

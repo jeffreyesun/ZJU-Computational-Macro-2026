@@ -60,7 +60,7 @@
 \begin{frame}{Conventions}
   \begin{itemize}
     \item Now that we have some intuition, let's set up some conventions that will pay off later.
-    \item Think of the state variable $z$ as \textbf{human capital},following a \textbf{Markov process $\Pi$}
+    \item Think of the state variable $z$ as \textbf{human capital},following a \textbf{Markov process $\Pi_z$}
     \item Period income is $zw$, where $w$ is the wage level. For now, we'll normalize $w = 1$.
     \item The \textbf{state} is now $(b, z)$.
     \item On computer, each $V$ is now a \textbf{matrix}. Rows are wealth $b$, columns are human capital $z$.
@@ -119,7 +119,7 @@
 
     % stage labels under each underbrace
     \node[below=12pt, align=center] at ({\seg/2}, -0.13)
-      {\textbf{Income shock}\\[1pt] $z_t \sim \Pi(\cdot \mid z^{\mathrm{end}}_{t-1})$};
+      {\textbf{Income shock}\\[1pt] $z_t \sim \Pi_z(\cdot \mid z^{\mathrm{end}}_{t-1})$};
     \node[below=12pt, align=center] at ({\W/2}, -0.13)
       {\textbf{Income}\\[1pt] $b_t = R\, b^{\mathrm{end}}_{t-1} + z_t$};
     \node[below=12pt, align=center] at ({5*\seg/2}, -0.13)
@@ -135,11 +135,11 @@
 
 \begin{frame}{Stage 1 --- Income Shock}
   \begin{itemize}
-    \item $\Pi_{ij} = \Pr(z_t = j \mid z^{\mathrm{end}}_{t-1} = i)$, row-stochastic.
+    \item $(\Pi_z)_{ij} = \Pr(z_t = j \mid z^{\mathrm{end}}_{t-1} = i)$, row-stochastic.
     \item \textbf{Backward} (value functions).
   \end{itemize}
   \[
-    V^{\mathrm{start}} \;=\; V^{\mathrm{pre\_inc}} \, \Pi^\top.
+    V^{\mathrm{start}} \;=\; V^{\mathrm{pre\_inc}} \, \Pi_z^\top.
   \]
   Each $(b^{\mathrm{end}}, z^{\mathrm{end}}_{t-1})$ entry of $V^{\mathrm{start}}$ is an expectation over $z_t$ given $z^{\mathrm{end}}_{t-1}$.
 
@@ -156,10 +156,10 @@
   Explicitly, the backwards step is,
   \begin{align*}
     V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}_{t-1}, z)
-    \; &= \; V\!\big(R\, b^{\mathrm{end}}_{t-1} + z,\; z\big).
+    \; &= \; V^{\mathrm{pre\_cons}}\!\big(R\, b^{\mathrm{end}}_{t-1} + z,\; z\big).
   \end{align*}
 
-  In the example code, we do this by \textbf{reinterpolating} $V$ at the new points $R\, b^{\mathrm{end}}_{t-1} + z$.
+  In the example code, we do this by \textbf{reinterpolating} $V^{\mathrm{pre\_cons}}$ at the new points $R\, b^{\mathrm{end}}_{t-1} + z$.
 \end{frame}
 
 \begin{frame}{Stage 3 --- Consumption-Saving}
@@ -169,7 +169,7 @@
   \]
   Explicitly, the backwards step is,
   \[
-    V(b, z) \;=\; \max_{b^{\mathrm{end}} \in b_{\mathrm{grid}}} u(b - b^{\mathrm{end}}) + \beta V^{\mathrm{end}}(b^{\mathrm{end}}, z).
+    V^{\mathrm{pre\_cons}}(b, z) \;=\; \max_{b^{\mathrm{end}} \in b_{\mathrm{grid}}} u(b - b^{\mathrm{end}}) + \beta V^{\mathrm{end}}(b^{\mathrm{end}}, z).
   \]
   
   Here, we fold in the time discounting by $\beta$ in the consumption-saving stage, but in general it can be thought of as really a separate stage.
@@ -177,21 +177,24 @@
 
 \begin{frame}[fragile]{Backwards Iteration}
   \begin{lstlisting}
-    function bellman_operator(V_end, params)
-      (; β) = params
-      # Stage 3
-      V_pre_cons = consumption_saving_backward(V_end, params)
+"Iterate V_end backwards by one full period."
+function bellman_operator(V_end, params)
+    (;β) = params
 
-      # Stage 2
-      V_pre_inc = income_backward(V_pre_cons, params)
+    # Stage 3
+    V_post_inc = consumption_saving_backward(V_end, params)
 
-      # Stage 1
-      V_start = income_shock_backward(V_pre_inc, params)
+    # Stage 2
+    V_post_inc_shock = income_backward(V_post_inc, params)
 
-      # Passage of time
-      V_end_new = β .* V_start
-      return V_end_new
-  end
+    # Stage 1
+    V_start = income_shock_backward(V_post_inc_shock, params)
+
+    # Stage 0
+    V_end_new = β .* V_start
+
+    return V_end_new
+end
   \end{lstlisting}
   Backwards iteration of $V$ is just \textbf{functional composition} of the backwards-iteration functions of each stage.
 \end{frame}
@@ -210,9 +213,9 @@
 \end{frame}
 
 \begin{frame}{A Population is a Vector (or Matrix)}
-  We can represent the \emph{population} as a discrete distribution $\lambda$ over the wealth grid:
+  We can represent the \emph{population} as a discrete distribution $\Lambda$ over the wealth grid:
   \[
-    \lambda_i \;=\; \text{share of households at } b_i.
+    \Lambda_i \;=\; \text{share of households at } b_i.
   \]
   That is, just like $V$, it is a vector (or a matrix) over the discretized state space.
 
@@ -221,8 +224,8 @@
 
 \begin{frame}{Aggregate Moments}
   \begin{itemize}
-    \item Aggregate welfare is then an inner product: $\bar{V} = \sum_i V(b_i) \, \lambda_i$. Same for $\bar{C}$, $\bar{K}$, etc.
-    \item Indeed, \textbf{any} moment of the distribution (e.g. aggregate capital, consumption, etc.) can be thought of as an inner product against $\lambda$.
+    \item Aggregate welfare is then an inner product: $\bar{V} = \sum_i V(b_i) \, \Lambda_i$. Same for $\bar{C}$, $\bar{K}$, etc.
+    \item Indeed, \textbf{any} moment of the distribution (e.g. aggregate capital, consumption, etc.) can be thought of as an inner product against $\Lambda$.
   \end{itemize}
 \end{frame}
 
@@ -234,8 +237,8 @@
   \toprule
   & \textbf{Backward} (value) & \textbf{Forward} (distribution) \\
   \midrule
-  \textbf{Stage 1}    & $V^{\mathrm{start}} = V^{\mathrm{pre\_inc}}\, \Pi^\top$
-                      & $\lambda^{\mathrm{post}} = \lambda^{\mathrm{pre}}\, \Pi$ \\
+  \textbf{Stage 1}    & $V^{\mathrm{start}} = V^{\mathrm{pre\_inc}}\, \Pi_z^\top$
+                      & $\Lambda^{\mathrm{post}} = \Lambda^{\mathrm{pre}}\, \Pi_z$ \\
   \textbf{Stage 2}    & $V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}, z) = V^\text{pre\_cons}(R\, b^{\mathrm{end}} + z,\, z)$
                       & $(b^{\mathrm{end}}, z) \to (R\, b^{\mathrm{end}} + z,\, z)$ \\
   \textbf{Stage 3}    & $V^\text{pre\_cons}(b, z) = \max\limits_{b^{\mathrm{end}}} u(b - b^{\mathrm{end}}) + V^{\mathrm{end}}(b^{\mathrm{end}}, z)$
@@ -259,29 +262,32 @@
 \begin{frame}[fragile]{Stage 1: Markov Income Shock}
   Forward:
   \begin{lstlisting}
-  # λ is an N_b × N_z matrix: rows index wealth, columns index z state.
-  # Markov along the z dimension is a single matrix multiplication.
-  result = λ * P_z
+# Λ is an N_b × N_z matrix: rows index wealth, columns index z state.
+# Markov along the z dimension is a single matrix multiplication.
+income_shock_forward(Λ, Π_z) = Λ * Π_z
   \end{lstlisting}
 
   \begin{itemize}
-    \item The mass at $(b_i, z_j)$ flows to $(b_i, z_{j'})$ with weight $\Pi_{j j'}$.
+    \item The mass at $(b_i, z_j)$ flows to $(b_i, z_{j'})$ with weight $(\Pi_z)_{j j'}$.
     \item Markov along one dimension is just a matrix multiplication.
   \end{itemize}
 \end{frame}
 
-\begin{frame}[fragile]{\texttt{simulate\_population}}
+\begin{frame}[fragile]{\texttt{simulate\_population\_forward}}
   \begin{lstlisting}
-  function simulate_population(b_inds_new, params, λ_0; T = 200)
-      path, cur = [copy( λ_0)], copy( λ_0)
-      for t in 1:T
-          cur = income_shock_forward(cur, params.P_z)                  # Stage 1
-          cur = income_forward(cur, params)                            # Stage 2
-          cur = consumption_saving_forward(cur, b_inds_new, params)    # Stage 3
-          push!(path, copy(cur))
-      end
-      return path
-  end
+"Simulate population forward through all three Stages: Λ → income shock → income → consumption saving."
+function simulate_population_forward(Λ, b_inds_new, params)
+    # Stage 1
+    Λ = income_shock_forward(Λ, params.Π_z)
+
+    # Stage 2
+    Λ = income_forward(Λ, params)
+
+    # Stage 3
+    Λ = consumption_saving_forward(Λ, b_inds_new, params)
+
+    return Λ
+end
   \end{lstlisting}
   Forward simulation is just \textbf{functional composition} of the forward-simulation functions of each stage.
 \end{frame}
@@ -289,11 +295,11 @@
 
 \begin{frame}{Solving for Steady State}
   \begin{enumerate}
-    \item Guess $v$ and $\lambda$.
+    \item Guess $v$ and $\Lambda$.
     \item Iterate $v$ backwards until it converges to $V$.
-    \item Simulate $\lambda$ forward until it converges to $\Lambda$.
+    \item Simulate $\Lambda$ forward until it converges to its steady state.
   \end{enumerate}
-  (Note: The conditions under which $\lambda$ converges are subtler than for $V$.)
+  (Note: The conditions under which $\Lambda$ converges are subtler than for $V$.)
 \end{frame}
 
 \end{document}

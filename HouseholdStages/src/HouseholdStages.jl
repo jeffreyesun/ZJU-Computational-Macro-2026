@@ -27,15 +27,19 @@ export
     continuous_grid, discrete_finite, categorical,
     axis_position, axisname, axisnames, axissize, axisvalues,
     layout_size, cells, cell_array, drop_axis,
-    # Param wrapper
-    Param, resolve, is_swept, swept_key,
+    # Stage-parameter env resolution
+    resolve, FromEnv,
     # Interpolation helpers
     reinterpolate!, reinterpolate_arr!,
     convert_distribution!, convert_distribution_arr!,
     k1_argmax_monotone!, k1_argmax_dc!,
     # Stage interface
-    AbstractStage, allocate, backward!, forward!,
-    V_start_buffer, Λ_end_buffer, bundle, invalidate!,
+    AbstractStage, AbstractStageSpec, AbstractStageBuffer, StageBuffer,
+    allocate, allocate_kernel, allocate_scratch,
+    backward!, forward!,
+    V_start_buffer, Λ_end_buffer, input_layout, output_layout,
+    bundle, invalidate!, @definestage,
+    default_eltype,
     # Stage dependency machinery
     static_env_deps, effective_env_slice, validate_env, chain_env_names,
     env_schema, make_env,
@@ -74,7 +78,7 @@ export
     compute_direct_jacobian!
 
 include("layout.jl")
-include("param.jl")
+include("stages/axis_ops.jl")
 include("helper/interpolations.jl")
 include("stages/abstract.jl")
 include("stages/markov_along.jl")

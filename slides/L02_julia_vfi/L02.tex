@@ -34,6 +34,8 @@
         + \beta \, V(R(b-c) + z,\, z)\quad\forall b,z
     \;}
   \]
+  $b$ is wealth. $z$ is the agent's productivity (constant for now).
+  
   This equation characterizes the function $V$ that is needed to solve the household's problem.
 \end{frame}
 
@@ -140,13 +142,14 @@
 \begin{frame}[fragile]{Bellman Operator $\mathcal{T}$ as a Julia Function}
   \begin{lstlisting}
   function bellman_operator(V, params)
+      # Unpack parameters from `params`
       (; β, R, z, b_grid) = params
 
-      # end-of-period wealth needed to reach each b' on the grid
-      b_end = (b_grid' .- z) ./ R
+      # Compute saving levels `b_end` necessary to achieve each level of next-period wealth `b_next`
+      b_end = (b_grid' .- z)./R
 
-      # u(c) + β V(b') for every (b, b'); take max over b'
-      return maximum(u.(b_grid .- b_end) .+ β.*V'; dims=2)
+      # Maximize conditional utility `u.(b_grid .- b_end) .+ β.*V'` across the `b_next` dimension (dimension 2, columns).
+      return maximum(u.(b_grid .- b_end) .+ β.*V'; dims=2) |> vec
   end
   \end{lstlisting}
   \texttt{b\_grid} is a column vector. \texttt{b\_grid'} is a row vector.
@@ -176,18 +179,23 @@
 
 \begin{frame}[fragile]{\texttt{solve\_vfi}}
   \begin{lstlisting}
-  function solve_vfi(params; tol=1e-6, maxiter=2000, verbosity=0)
+  function solve_vfi(params; rtol=1e-6, verbosity=0)
+      # Make initial guess of V
       V = zeros(size(params.b_grid))
 
-      iters, Δ = 0, Inf
-      while Δ >= tol
+      # Repeatedly apply Bellman operator until convergence
+      Δ = Inf
+      while Δ >= rtol
+          # Update V
           TV = bellman_operator(V, params)
-          V, Δ = TV, maximum(abs.(TV .- V))
-          iters += 1
-          iters > maxiter && error("VFI did not converge in $maxiter iterations")
+
+          # Calculate error
+          Δ = maximum(abs.(TV .- V))
+
+          # Update V
+          V = TV
       end
 
-      verbosity >= 1 && println("VFI converged in $iters iterations with error ", Δ)
       return V
   end
   \end{lstlisting}
@@ -196,9 +204,9 @@
 \begin{frame}[fragile]{Baseline Calibration}
   \begin{lstlisting}
   b_grid = loggrid(0.05, 40.0, 400)
-  params = (; β=0.96, R=1.04, z=1.0, b_grid)
+  params = (;β=0.96, R=1.04, z=1.0, b_grid)
 
-  V = solve_vfi(params; verbosity=1)
+  V = solve_vfi(params)
   \end{lstlisting}
   \begin{itemize}
     \item \small $\beta R < 1$, otherwise $V^*$ is infinite.
@@ -227,8 +235,8 @@
       # same setup as bellman_operator
       b_end = (b_grid' .- z) ./ R
 
-      # argmax over b' (columns) — return the chosen b'-index for each row
-      idx = argmax(u.(b_grid .- b_end) .+ β.*V'; dims=2)
+      # argmax over b' (columns) — pull out the column index for each row
+      idx = argmax(u.(b_grid .- b_end) .+ β .* V'; dims=2)
       return vec(getindex.(idx, 2))::Vector{Int}
   end
   \end{lstlisting}

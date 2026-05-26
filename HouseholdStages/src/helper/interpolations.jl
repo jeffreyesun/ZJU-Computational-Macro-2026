@@ -21,7 +21,7 @@
 # Linear interpolation of V #
 #---------------------------#
 
-"""CLAUDE
+"""
 Linearly interpolate `(x1, y1)` onto `x2`, writing into `y2`. Both grids
 must be sorted. `extrap` controls left-extrapolation when `x2[i] < x1[1]`:
 `:linear` extends the leftmost slope, `:clip` snaps to `y1[1]`, and
@@ -66,7 +66,7 @@ function reinterpolate!(y2::AbstractVector, y1::AbstractVector,
     return y2
 end
 
-"""CLAUDE
+"""
 Apply [`reinterpolate!`](@ref) along the leading dimension of
 arbitrary-rank arrays, broadcasting `x1` / `x2` across trailing dims
 when they have length 1 there.
@@ -82,7 +82,7 @@ end
 # Distribution conversion #
 #-------------------------#
 
-"""CLAUDE
+"""
 Convert a non-negative weight vector `y` on grid `x` to a weight vector
 `y_new` on grid `x_new`, preserving total mass.
 
@@ -140,7 +140,7 @@ function convert_distribution!(y_new::AbstractVector, y::AbstractVector,
     return y_new
 end
 
-"""CLAUDE
+"""
 Apply [`convert_distribution!`](@ref) along the leading dimension of
 arbitrary-rank arrays, broadcasting `x` / `x_new` across trailing dims
 when they have length 1 there.
@@ -158,7 +158,7 @@ end
 # Monotone-policy argmax #
 #------------------------#
 
-"""CLAUDE
+"""
 Maximize `u_slice[a, s] + V_post[a]` over `a` for each `s`, with the
 monotone-policy guarantee that the optimum is non-decreasing in `s`. The
 search for each `s` therefore starts where `s-1`'s search ended, so the
@@ -208,7 +208,7 @@ end
 # Monotone-policy divide-and-conquer argmax #
 #-------------------------------------------#
 
-"""CLAUDE
+"""
 Divide-and-conquer monotone-policy argmax. Same problem as
 [`k1_argmax_monotone!`](@ref): for each `s`, maximise `u_slice[a, s] +
 V_post[a]` over `a`, with the monotone-policy guarantee that the optimum

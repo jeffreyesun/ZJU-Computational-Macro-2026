@@ -113,7 +113,7 @@ p    = SpatialParams()
 #--------------------------#
 
 hh   = spatial_household(p)
-dims = layout_size(first(hh.spec.stages).input_layout)
+dims = layout_size(input_layout(hh))
 
 @printf "Layout: wealth %d × income %d × location %d = %d cells\n" dims[1] dims[2] dims[3] prod(dims)
 

@@ -69,7 +69,7 @@ u_crra(c, valσ::Val) = c < 0 ? -Inf : _u_crra(c, valσ)
 # Effective labor (stationary distribution over income) #
 #-------------------------------------------------------#
 
-"""CLAUDE
+"""
 Stationary-distribution-weighted aggregate labor for the income chain
 `P_y`: solve `π' P_y = π'` (with `Σπ = 1`) and return `Σ π_i y_i`. Used
 by `ks_prices` so the Cobb-Douglas wage and rental rate reflect the

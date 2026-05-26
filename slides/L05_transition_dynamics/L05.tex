@@ -11,10 +11,6 @@
 % silently dropped otherwise.
 \setmonofont{DejaVu Sans Mono}[Scale=0.85]
 
-% Composition operator: ∘ with a subscript s. Used informally as the
-% Julia-package name `∘ₛ` but we typeset it as math \circ_s.
-\newcommand{\circs}{\mathbin{\circ_s}}
-
 \title{Lecture 5: Expectations --- Transition Dynamics}
 \subtitle{Computational Methods for Heterogeneous-Agent Macro}
 \author{Jeffrey Sun}
@@ -83,10 +79,10 @@
 
 \begin{frame}{Same Model as Before}
   \begin{itemize}
-    \item \textbf{Stage Chain} (time order): \[ \text{z\_shock} \circs \text{income} \circs \text{savings}. \]
+    \item \textbf{Stage Chain} (time order): \[ \text{z\_shock} \circ \text{income} \circ \text{savings}. \]
     \item \textbf{Firm.} Cobb-Douglas, fixed labor $L$.
-    \item \textbf{Equilibrium.} $\bar K = \bar K^{\mathrm{supplied}}(\bar K)$.
-    \item \textbf{Outer loop.} Damped \textbf{tatonnement} on $\bar K$.
+    \item \textbf{Equilibrium.} $R = R^{\mathrm{implied}}(K^{\mathrm{supplied}}(R))$.
+    \item \textbf{Outer loop.} Damped \textbf{tatonnement} on $R$.
   \end{itemize}
 \end{frame}
 
@@ -106,16 +102,13 @@
 
 \begin{frame}[fragile]{Stage 1: $z$ Shock}
   \begin{lstlisting}
-  z_shock = MarkovStage(layout; axis=:z, transition=P_z)
+  z_shock = MarkovStage(layout; axis=:z, transition=p.Π_z)
   \end{lstlisting}
 \end{frame}
 
 \begin{frame}[fragile]{Stage 2: Income}
   \begin{lstlisting}
-  income = WealthChangeStage(layout;
-      wealth_post = (cell; env) ->
-          (1 + env.r) * cell.wealth + env.w * cell.z,
-  )
+  income = WealthChangeStage(layout; wealth_post=(cell; env) -> env.R * cell.wealth + env.w * cell.z)
   \end{lstlisting}
   \begin{itemize}
     \item Previous example snapped-to-grid. The library function reinterpolates continuously.
@@ -124,10 +117,7 @@
 
 \begin{frame}[fragile]{Stage 3: Consumption Savings}
   \begin{lstlisting}
-  savings = ConsumptionSavingsStage(layout; β=0.96,
-      utility=(cell, c; env) -> c < 0 ? -Inf : log(c),
-      monotone_search=:divide_conquer,
-  )
+  savings = ConsumptionSavingsStage(layout; β=p.β, utility=(cell, c; env) -> u_crra(c, Val(p.σ)), monotone_search=:divide_conquer)
   \end{lstlisting}
   \begin{itemize}
     \item \texttt{:divide\_conquer}: faster $O(N \log N)$ algorithm for when policy is monotone in $b$.
@@ -146,43 +136,45 @@
 
 \begin{frame}[fragile]{Define Moments}
   \begin{lstlisting}
-  hh = define_moments!(hh;
-      K_supplied=at_end(integrand=:wealth, reduce=sum),
-  )
+  hh = define_moments!(hh; K_supplied=at_end(integrand=:wealth, reduce=sum))
   \end{lstlisting}
   \begin{itemize}
     \item \texttt{define\_moments!}: Define integrals on $\Lambda$. Here $K^{\mathrm{supplied}} = \int b\,\mathrm{d}\Lambda^\text{end}$.
   \end{itemize}
 \end{frame}
 
-\begin{frame}[fragile]{Solve Steady State Given $\bar K$}
+\begin{frame}[fragile]{Solve Steady State Given $R$}
   \begin{lstlisting}
-  env = make_env(hh; aiyagari_prices(K, p)...)        # (r, w)
+  (;K, w) = aiyagari_supply_side(R, p)
+  env = make_env(hh; R, w)
   res = solve_steady_state_given_env!(hh, env)
   K_supplied = res.moments.K_supplied
   \end{lstlisting}
   \begin{itemize}
-    \item \textbf{Line 1.} Build env: $(K, r, w)$.
-    \item \textbf{Line 2.} Find steady state $V$ and $\Lambda$.
-    \item \textbf{Line 3.} Read off $K^{\mathrm{supplied}}$.
+    \item \textbf{Line 1.} From $R$, get firm-side $K$ and wage $w$.
+    \item \textbf{Line 2.} Build env: $(R, w)$.
+    \item \textbf{Line 3.} Find steady state $V$ and $\Lambda$.
+    \item \textbf{Line 4.} Read off $K^{\mathrm{supplied}}$.
   \end{itemize}
 \end{frame}
 
 \begin{frame}[fragile]{Outer Tatonnement Loop}
   \begin{lstlisting}
-  K = 5.0
-  for it in 1:max_iter
-      env = make_env(hh; aiyagari_prices(K, p)...)
-      (; V, Λ, moments) = solve_steady_state_given_env!(hh, env)
-      K_supplied = moments.K_supplied
-      K_err = abs(K_supplied - K) / K
-      K_err <= rtol && break
-      K += update_speed * (K_supplied - K)        # damped tatonnement
+  R = R_init
+  while err >= rtol
+      env = make_env(hh; R, w=aiyagari_supply_side(R, p).w)
+      (;V, Λ, moments) = solve_steady_state_given_env!(hh, env)
+      R_implied = aiyagari_prices(moments.K_supplied, p).R
+      err = abs(R_implied - R)
+      R += update_speed*(R_implied - R)           # damped tatonnement
   end
   \end{lstlisting}
-  Each pass: $\bar{K} \to R \to V,\Lambda \to K^{\mathrm{supplied}} \to K\_\text{err}$, then update $\bar K$.
-  
-  Stop when $|K_\mathrm{err}| / K < $\texttt{rtol}.
+  Each pass: $R \to (K, w) \to V,\Lambda \to K^{\mathrm{supplied}} \to R^{\mathrm{implied}}$, then update $R$.
+
+  Stop when $|R^{\mathrm{implied}} - R| < $\texttt{rtol}.
+
+  \vspace{0.4em}
+  \footnotesize Tatonnement on the \emph{price} is the general approach: the household block is a price-taker, and the outer loop searches for the price that clears the market. Tatonnement on $\bar K$ happens to work in Aiyagari because asset- and goods-market clearing coincide, but it does not generalize.
 \end{frame}
 
 % =============================================================
@@ -196,8 +188,8 @@
 
   In the example calibration:
   \begin{itemize}
-    \item $A = 1$ → $\bar K_{\mathrm{pre}} = 5.68$, $\bar R_{\mathrm{pre}} = 0.038$.
-    \item $A = 1.05$ → $\bar K_{\mathrm{post}} = 6.14$, $\bar R_{\mathrm{post}} = 0.038$.
+    \item $A = 1$ \,$\to$\, $\bar K_{\mathrm{pre}} = [\text{verify}]$, $\bar R_{\mathrm{pre}} = [\text{verify}]$.
+    \item $A = 1.05$ \,$\to$\, $\bar K_{\mathrm{post}} = [\text{verify}]$, $\bar R_{\mathrm{post}} = [\text{verify}]$.
   \end{itemize}
 \end{frame}
 
@@ -241,7 +233,7 @@
   \]
   \begin{itemize}
     \item The \emph{only} exogenous change.
-    \item $\{r_t, w_t, K_t, V_t, \Lambda_t\}$ change in \textbf{response}.
+    \item $\{R_t, w_t, K_t, V_t, \Lambda_t\}$ change in \textbf{response}.
     \item Set $T = 100$ and set $V_{T+1} = V^\text{new\_steady\_state}$ to close the model.
   \end{itemize}
 \end{frame}
@@ -253,34 +245,34 @@
 \begin{frame}{The problem statement}
   \begin{itemize}
     \item \textbf{Given:} $\{A_t\}_{t = 1}^T$.
-    \item \textbf{Find:} $\{K_t, V_t, \Lambda_t\}$ such that
+    \item \textbf{Find:} $\{R_t, V_t, \Lambda_t\}$ such that
   \end{itemize}
   \begin{itemize}
-    \item $V_{T+1} = V_{\mathrm{ss}}$ (terminal).
-    \item $\Lambda_1 = \Lambda_{\mathrm{ss}}$ (initial).
-    \item $V_t = \text{backward}(V_{t+1}, K_t, A_t)$.
-    \item $\Lambda_{t+1} = \text{forward}(\Lambda_t, V_{t+1})$.
-    \item Markets clear: $K_t = K_t^{\mathrm{supplied}}$.
+    \item $V_{T+1} = V_{\mathrm{ss}^{\mathrm{post}}}$ (terminal).
+    \item $\Lambda_1 = \Lambda_{\mathrm{ss}^{\mathrm{pre}}}$ (initial).
+    \item $V_t = \text{backward}(V_{t+1}, \mathrm{env}_t)$.
+    \item $\Lambda_{t+1} = \text{forward}(\Lambda_t, V_{t+1}, \mathrm{env}_t)$.
+    \item Markets clear: $R_t = R^{\mathrm{implied}}(K_t^{\mathrm{supplied}})$.
   \end{itemize}
 \end{frame}
 
 \begin{frame}{Algorithm}
 
-\textbf{1. Guess path $\{K_t\}$.}
+\textbf{1. Guess path $\{R_t\}$.}
 
 \textbf{2. Iterate $V$ backward.}
 \[
-  V_{T+1} \leftarrow V_{\mathrm{ss}^{\mathrm{post}}}, \quad V_t = \text{backward}(V_{t+1}, K_t, A_t).
+  V_{T+1} \leftarrow V_{\mathrm{ss}^{\mathrm{post}}}, \quad V_t = \text{backward}(V_{t+1}, \mathrm{env}_t).
 \]
 
 \textbf{3. Simulate $\Lambda$ forward.}
 \[
-  \Lambda_1 \leftarrow \Lambda_{\mathrm{ss}^{\mathrm{pre}}}, \quad \Lambda_{t+1} = \text{forward}(\Lambda_t, V_{t+1}).
+  \Lambda_1 \leftarrow \Lambda_{\mathrm{ss}^{\mathrm{pre}}}, \quad \Lambda_{t+1} = \text{forward}(\Lambda_t, V_{t+1}, \mathrm{env}_t).
 \]
 
-\textbf{4. Update $K_{\mathrm{path}}$.}
+\textbf{4. Update $R_{\mathrm{path}}$.}
 \[
-  K_t \leftarrow (1 - s)\,K_t + s\,K_t^{\mathrm{supplied}}.
+  R_t \leftarrow (1 - s)\,R_t + s\,R_t^{\mathrm{implied}}, \quad R_t^{\mathrm{implied}} = R^{\mathrm{implied}}(K_t^{\mathrm{supplied}}).
 \]
 
 \end{frame}
@@ -288,7 +280,7 @@
 \begin{frame}{Note: Rootfinding}
   Ultimately, the problem is to find the root of the excess demand function in sequence space:
   \[
-    \text{excess\_demand}(\{K_t\}) = \vec{0}.
+    \text{excess\_demand}(\{R_t\}) = \vec{0}.
   \]
   For demonstration, we are using the simple and robust method of tatonnement.
 
@@ -298,19 +290,20 @@
 \begin{frame}[fragile]{The algorithm}
 \begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
 hh_path = [aiyagari_household(p_new) for _ in 1:T]   # one chain per period
-K_path = fill(K_ss, T)                               # initial guess
-V_path[T+1] .= V_ss; Λ_path[1] .= Λ_ss               # boundary conditions
-while res > tol
-    env_path = [make_env(hh_path[t]; aiyagari_prices(K_path[t], p_new)...) for t in 1:T]
+R_path = collect(range(pre.R, post.R; length=T))     # initial guess
+V_path[T+1] .= post.V; Λ_path[1] .= pre.Λ            # boundary conditions
+while err >= rtol
+    env_path = [make_env(hh_path[t]; R=R_path[t], w=aiyagari_supply_side(R_path[t], p_new).w) for t in 1:T]
     for t in T:-1:1                                  # backward sweep
         copyto!(V_path[t], backward!(hh_path[t], V_path[t+1], env_path[t]))
     end
     for t in 1:T                                     # forward sweep
-        copyto!( Λ_path[t+1], forward!(hh_path[t], Λ_path[t]))
-        K_supplied[t] = compute_moments(hh_path[t], Λ_path[t+1], env_path[t]).K_supplied
+        copyto!(Λ_path[t+1], forward!(hh_path[t], Λ_path[t]))
+        K_S = compute_moments(hh_path[t], Λ_path[t+1], env_path[t]).K_supplied
+        R_implied_path[t] = aiyagari_prices(K_S, p_new).R
     end
-    res = maximum(abs, K_supplied .- K_path)
-    K_path .= (1 - update_speed) .* K_path .+ update_speed .* K_supplied   # damped tatonnement
+    err = maximum(abs.(R_implied_path .- R_path))
+    R_path .+= update_speed .* (R_implied_path .- R_path)                  # damped tatonnement
 end
 \end{lstlisting}
 \end{frame}
@@ -324,15 +317,15 @@ end
 \textbf{We need both:}
 
 \begin{itemize}
-  \item $V_{\mathrm{ss}}$: terminal for backward sweep.
-  \item $\Lambda_{\mathrm{ss}}$: initial for forward sweep.
+  \item $V_{\mathrm{ss}^{\mathrm{post}}}$: terminal for backward sweep.
+  \item $\Lambda_{\mathrm{ss}^{\mathrm{pre}}}$: initial for forward sweep.
 \end{itemize}
 
 \vspace{0.4em}
 
 \begin{itemize}
-  \item Section 2's tatonnement gives both.
-  \item \textbf{Setup:} $V_{\mathrm{ss}} \to V_\mathrm{path}[T+1]$; $\Lambda_{\mathrm{ss}} \to \Lambda_\mathrm{path}[1]$; initial $\{K_t\} \equiv K_{\mathrm{ss}}$.
+  \item Section 2's tatonnement gives both (run once at each end).
+  \item \textbf{Setup:} $V_{\mathrm{ss}^{\mathrm{post}}} \to V_\mathrm{path}[T+1]$; $\Lambda_{\mathrm{ss}^{\mathrm{pre}}} \to \Lambda_\mathrm{path}[1]$; initial $\{R_t\}$ a straight line from $R^{\mathrm{pre}}_{\mathrm{ss}}$ to $R^{\mathrm{post}}_{\mathrm{ss}}$.
 \end{itemize}
 
 \end{frame}
@@ -340,7 +333,7 @@ end
 \begin{frame}[fragile]{Backward sweep}
 \begin{lstlisting}
 for t in T:-1:1
-    env_t = make_env(hh_path[t]; aiyagari_prices(K_path[t], p_new)...)
+    env_t = make_env(hh_path[t]; R=R_path[t], w=aiyagari_supply_side(R_path[t], p_new).w)
     copyto!(V_path[t], backward!(hh_path[t], V_path[t+1], env_t))
 end
 \end{lstlisting}
@@ -350,9 +343,10 @@ end
 \begin{frame}[fragile]{Forward sweep (re-seat kernels!)}
 \begin{lstlisting}
 for t in 1:T
-    env_t = make_env(hh_path[t]; aiyagari_prices(K_path[t], p_new)...)
-    copyto!( Λ_path[t+1], forward!(hh_path[t], Λ_path[t]))
-    K_supplied[t] = compute_moments(hh_path[t], Λ_path[t+1], env_t).K_supplied
+    env_t = make_env(hh_path[t]; R=R_path[t], w=aiyagari_supply_side(R_path[t], p_new).w)
+    copyto!(Λ_path[t+1], forward!(hh_path[t], Λ_path[t]))
+    K_S = compute_moments(hh_path[t], Λ_path[t+1], env_t).K_supplied
+    R_implied_path[t] = aiyagari_prices(K_S, p_new).R
 end
 \end{lstlisting}
 
@@ -360,8 +354,8 @@ end
 
 \begin{frame}[fragile]{Outer tatonnement update}
 \begin{lstlisting}
-res = maximum(abs, K_supplied .- K_path)
-K_path .= (1 - update_speed) .* K_path .+ update_speed .* K_supplied
+err = maximum(abs.(R_implied_path .- R_path))
+R_path .+= update_speed .* (R_implied_path .- R_path)
 \end{lstlisting}
 
 \end{frame}
@@ -372,9 +366,9 @@ K_path .= (1 - update_speed) .* K_path .+ update_speed .* K_supplied
 \textbf{Shape.}
 
 \begin{itemize}
-  \item $\Delta A$ raises $r$.
-  \item Higher $r$ $\to$ more savings.
-  \item More saving $\to$ higher $K$ $\to$ lower $r$. Self-correcting.
+  \item $\Delta A$ raises $R$.
+  \item Higher $R$ $\to$ more savings.
+  \item More saving $\to$ higher $K$ $\to$ lower $R$. Self-correcting.
 \end{itemize}
 
 \vspace{0.4em}
@@ -383,21 +377,21 @@ K_path .= (1 - update_speed) .* K_path .+ update_speed .* K_supplied
 
 \end{frame}
 
-\begin{frame}{IRF: $r_t$ and $w_t$}
+\begin{frame}{IRF: $R_t$ and $w_t$}
 
-\textbf{$r_t$.}
+\textbf{$R_t$.}
 
 \begin{itemize}
-  \item Jumps on impact ($A_1$ before $K$ moves).
-  \item Falls below SS as $K$ overshoots.
-  \item Returns to $r_{\mathrm{ss}}$ as $A_t \to 1$.
+  \item Jumps up on impact ($A$ rises before $K$ moves).
+  \item Decays back toward $R^{\mathrm{post}}_{\mathrm{ss}} = 1/\beta$ as $K$ accumulates.
+  \item In Aiyagari $R^{\mathrm{pre}}_{\mathrm{ss}} = R^{\mathrm{post}}_{\mathrm{ss}}$; $K$ absorbs the permanent shift.
 \end{itemize}
 
 \textbf{$w_t$.}
 
 \begin{itemize}
-  \item Same pattern, opposite sign.
-  \item Above SS while $K$ overshoots.
+  \item Same pattern, opposite sign on impact.
+  \item Rises with $K$ to a permanently higher $w^{\mathrm{post}}_{\mathrm{ss}}$.
 \end{itemize}
 
 \end{frame}
@@ -405,7 +399,7 @@ K_path .= (1 - update_speed) .* K_path .+ update_speed .* K_supplied
 \begin{frame}{Welfare}
 
 \begin{itemize}
-  \item Wealthy agents: transient capital gain on $r$.
+  \item Wealthy agents: transient capital gain on $R$.
   \item Wage-dependent agents: pick up the $w$ side.
 \end{itemize}
 
@@ -418,13 +412,13 @@ For Aiyagari we get a \emph{distribution} of welfare effects, period by period. 
 \begin{frame}{Pick $T$ large enough}
 
 \begin{itemize}
-  \item $T$ = horizon where $A_T \approx 1$ and $V_{T+1} = V_{\mathrm{ss}}$.
+  \item $T$ = horizon by which $\bar K$ and $V$ have converged to the post-shock steady state, so $V_{T+1} \approx V^{\mathrm{post}}_{\mathrm{ss}}$.
   \item Too small $\to$ terminal condition contaminates the path.
 \end{itemize}
 
 \vspace{0.4em}
 
-\textbf{Rule of thumb.} $T$ such that $A_T - 1 < 10^{-3}$. At $\rho = 0.85$, $A_0 = 1.05$: $T \approx 25$. We use $T = 100$.
+\textbf{Rule of thumb.} $T$ such that $|\bar K_T - \bar K^{\mathrm{post}}_{\mathrm{ss}}| < 10^{-3}$. We use $T = 200$.
 
 \end{frame}
 

@@ -8,9 +8,6 @@
 \setsansfont{Latin Modern Sans}
 \setmonofont{DejaVu Sans Mono}[Scale=0.85]
 
-% Composition operator: ∘ with subscript s. Carried for legacy parity.
-\newcommand{\circs}{\mathbin{\circ_s}}
-
 \title{Lecture 7: The Krusell--Smith Method}
 \subtitle{Computational Methods for Heterogeneous-Agent Macro}
 \author{Jeffrey Sun}
@@ -22,101 +19,74 @@
 \maketitle
 
 % =============================================================
-\section[Curse of Dimensionality]{Curse of Dimensionality}
+\section{Krusell-Smith}
 % =============================================================
 
-\begin{frame}{Setup}
+\begin{frame}{Setup: Aiyagari with Aggregate TFP Shocks}
+  Aggregate TFP $Z_t \in \{Z_{\text{bad}}, Z_{\text{good}}\}$ Markov  with $\Pi_Z$.
 
-\textbf{Aggregate state.} TFP $Z_t \in \{Z_{\text{bad}}, Z_{\text{good}}\}$ Markov  with $P_Z$.
+  Idiosyncratic state: $(z_{it}, b_{it})$
+  \begin{itemize}
+    \item Productivity $z_{it} \in \{z_{\text{lo}}, z_{\text{hi}}\}$ Markov with $\Pi_z$
+    \item Wealth $b_{it}$.
+  \end{itemize}
 
-\smallskip
-
-\textbf{Idiosyncratic state.} $(z_{it}, b_{it})$ Productivity $z_{it} \in \{z_{\text{lo}}, z_{\text{hi}}\}$ Markov with $P_z$; Wealth $b_{it}$.
-
-\smallskip
-
-\textbf{Technology.} Cobb--Douglas with TFP $Z_t$:
-\[
-  Y_t = Z_t\, K_t^{\alpha} L^{1-\alpha}.
-\]
-
-\smallskip
-
-$L$ is assumed-constant stationary mean of $z$.
-
+  Technology: Cobb--Douglas with TFP $Z_t$:
+  \[
+    Y_t = Z_t\, K_t^{\alpha} L^{1-\alpha}.
+  \]
+  $L$ is assumed constant at the stationary mean of $z$.
 \end{frame}
 
 \begin{frame}{Prices}
+  Gross interest rate and wage given by $Z_t, K_t, L$,
+  \[
+    R(Z_t, K_t) = 1 + \alpha\, Z_t\, (K_t/L)^{\alpha-1} - \delta,
+  \]
+  \[
+    w(Z_t, K_t) = (1-\alpha)\, Z_t\, (K_t/L)^{\alpha}.
+  \]
 
-Rental rate and wage given by $Z_t, K_t, L$,
-\[
-  r(Z_t, K_t) = \alpha\, Z_t\, (K_t/L)^{\alpha-1} - \delta,
-\]
-\[
-  w(Z_t, K_t) = (1-\alpha)\, Z_t\, (K_t/L)^{\alpha}.
-\]
-
-\smallskip
-
-Problem: Household price forecasts both \textbf{affect} and \textbf{depend on} future $K_{t+1}$.
-
+  Problem: Household price forecasts both \textbf{affect} and \textbf{depend on} future $K_{t+1}$.
 \end{frame}
 
 \begin{frame}{$K_{t+1}$ depends on $\Lambda_t$}
+  \[
+    K_{t+1} = \int b_i'(b_i, z_i;\, Z_t, K_t)\, \mathrm d\Lambda_t(b_i, z_i).
+  \]
 
-\[
-  K_{t+1} = \int b_i'(b_i, z_i;\, Z_t, K_t)\, \mathrm d\Lambda_t(b_i, z_i).
-\]
+  Policy $b_i'(b_i, z_i;\, Z_t, K_t)$ depends on price forecasts.
 
-\smallskip
+  Price $R_{t+s}, w_{t+s}$ forecasts depend on $\Lambda_{t+s}$ through $K_{t+s}$.
 
-Policy $b_i'(b_i, z_i;\, Z_t, K_t)$ depends on price forecasts.
-
-Price $r_{t+s}, w_{t+s}$ forecasts depend on $\Lambda_{t+s}$ through $K_{t+s}$.
-
-\smallskip
-
-\textbf{Note:} Same $K_t$ from different $\Lambda_t$ can imply different $K_{t+1}$.
-
+  \textbf{Note:} Same $K_t$ from different $\Lambda_t$ can imply different $K_{t+1}$.
 \end{frame}
 
 \begin{frame}{Bellman Equation}
-
-\textbf{Distribution} $\Lambda$ becomes a \textbf{state variable}:
-\[
-  V(b_i, z_i; \Lambda, Z) = \max_{c_i, b_i'} u(c_i) + \beta\, \E\!\bigl[V(b_i', z_i'; \Lambda', Z') \mid z_i, Z\bigr],
-\]
-
+  \textbf{Distribution} $\Lambda$ becomes a \textbf{state variable}:
+  \[
+    V(b_i, z_i; \Lambda, Z) = \max_{c_i, b_i'} u(c_i) + \beta\, \E\!\bigl[V(b_i', z_i'; \Lambda', Z') \mid z_i, Z\bigr],
+  \]
 \end{frame}
 
 \begin{frame}{$\Lambda$ is infinite-dimensional}
+  $\Lambda_t$ is a \textbf{distribution} over every $(b, z)$.
 
-$\Lambda_t$ is a \textbf{distribution} over every $(b, z)$.
+  The ``true'' $\Lambda_t$ is infinite-dimensional.
 
-\smallskip
+  Even if we discretize $\Lambda_t$ into a matrix, \textbf{every gridpoint is a state variable}.
 
-The ``true'' $\Lambda_t$ is infinite-dimensional.
+  With $N_b = 80$ wealth gridpoints and $\#z = 2$ productivity levels, grid has 160 points.
 
-\smallskip
-
-Even if we discretize $\Lambda_t$ into a matrix, \textbf{every gridpoint is a state variable}.
-
-With $N_w = 80$ wealth gridpoints and $N_z = 2$ productivity levels, grid has 160 points.
-
-\smallskip
-
-A $V$ grid over possible $\Lambda$ values: $5^{160-1}$ cells. About $10^{111}$.
-
+  A $V$ grid over possible $\Lambda$ values: $5^{160-1}$ cells. About $10^{111}$.
 \end{frame}
 
 \begin{frame}{Tractably Parametrizing $V(\ldots\ ;\ \ldots,\ \Lambda)$}
+  Two ideas:
 
-\textbf{(a) Reduce $\Lambda$.} (Krusell-Smith.) Use moments of $\Lambda_t$ instead of the whole distribution.
+  \textbf{(a) Reduce $\Lambda$.} (Krusell-Smith.) Use moments of $\Lambda_t$ instead of the whole distribution.
 
-\smallskip
-
-\textbf{(b) Reduce the representation.} (nVFI.) Parameterise $V(\Lambda, \cdot)$ by a flexible family of functions (e.g. a \textbf{neural network}).
-
+  \textbf{(b) Reduce the representation.} (nVFI.) Parameterise $V(\Lambda, \cdot)$ by a flexible family of functions (e.g. a \textbf{neural network}).
 \end{frame}
 
 % =============================================================
@@ -124,438 +94,222 @@ A $V$ grid over possible $\Lambda$ values: $5^{160-1}$ cells. About $10^{111}$.
 % =============================================================
 
 \begin{frame}{Microfoundation: Bounded Rationality}
+  Krusell and Smith (1998): Assume the \textbf{household} only observes moments of $\Lambda_t$, not the whole distribution.
 
-Krusell and Smith (1998): Assume the \textbf{household} only observes moments of $\Lambda_t$, not the whole distribution.
-
-\smallskip
-
-i.e. solve a model of $V(b, z; Z, K)$, not $V(b, z; Z, \Lambda)$.
-
+  i.e. solve a model of $V(b, z; Z, K)$, not $V(b, z; Z, \Lambda)$.
 \end{frame}
 
-\begin{frame}{The Approximate Law of Motion}
+\begin{frame}{The Approximate Law of Motion (ALM)}
+  Assume household uses a forecast rule for $K$:
+  \[
+    \log K_{t+1} = a_0(Z_t) + a_1(Z_t) \log K_t.
+  \]
 
-Assume household uses a forecast rule for $K$:
-\[
-  \log K_{t+1} = a_0 Z_t + a_1 Z_t\, \log K_t.
-\]
+  \textbf{Two coefficients per $Z$ state.} For 2-state $Z$, four numbers total.
 
-\textbf{Two coefficients per $Z$ state.} For 2-state $Z$, four numbers total.
-
-\textbf{Log-linear.} K--S find this is actually a very good fit.
-
+  \textbf{Log-linear.} K--S find this is actually a very good fit.
 \end{frame}
 
-\begin{frame}{The bounded-rationality Bellman}
-
-Replace $\Lambda$ with $K$ in the state:
-\[
-  V(b_i, z_i, Z, K) = \max_{c_i, b_i'} u(c_i) + \beta\, \E\bigl[V(b_i', z_i', Z', K')\bigr],
-\]
-subject to
-\[
-  c_i + b_i' = (1 + r(Z, K))\, b_i + w(Z, K)\, z_i,
-\]
-with the agent's \emph{belief}
-\[
-  K' = \exp(a_0(Z) + a_1(Z) \log K),
-\]
-and $Z'$ drawn from $P_Z$.
-
+\begin{frame}{The Bounded-Rationality Bellman}
+  Replace $\Lambda$ with $K$ in the state:
+  \[
+    V(b_i, z_i, Z, K) = \max_{c_i, b_i'} u(c_i) + \beta\, \E\bigl[V(b_i', z_i', Z', K')\bigr],
+  \]
+  subject to
+  \[
+    c_i + b_i' = R(Z, K)\, b_i + w(Z, K)\, z_i,
+  \]
+  with the agent's \emph{belief}
+  \[
+    K' = \exp(a_0(Z) + a_1(Z) \log K),
+  \]
+  and $Z'$ drawn from $\Pi_Z$.
 \end{frame}
 
-\begin{frame}{The chain in five stages}
+\begin{frame}{The Behavioural Chain (Five Stages)}
+  Assuming the approximate law of motion (ALM), we can solve the model by simply adding two Stages to the household block:
+  \begin{enumerate}
+    \item \texttt{z\_shock}: $z_{it} \to z_i^{t+1}$ (Markov on \texttt{:z}).
+    \item \texttt{income}: $b_i' \gets R\, b_i + w\, z_i$, with $(R, w)$ from $(Z, K)$.
+    \item \texttt{savings}: pick $b_i^{t+1}$.
+    \item \texttt{K\_evolve}: $K_t \to K_{t+1}$.
+    \item \texttt{Z\_shock}: $Z_t \to Z_{t+1}$.
+  \end{enumerate}
 
-Within a period, in time order:
-\begin{enumerate}
-  \item \texttt{z\_shock}: $z_{it} \to z_i^{t+1}$ (Markov on \texttt{:z}).
-  \item \texttt{income}: $b_i' \gets (1+r) b_i + w\, z_i$, with $(r, w)$ from $(Z, K)$.
-  \item \texttt{savings}: pick $b_i^{t+1}$.
-\end{enumerate}
-Moment: \texttt{K\_evolve}: $K_t \to K_{t+1}$.
-Aggregate Shock: \texttt{Z\_shock}: $Z_t \to Z_{t+1}$.
+  \begin{center}\small
+  \texttt{z\_shock} $\circ$ \texttt{income} $\circ$ \texttt{savings} $\circ$ \texttt{K\_evolve} $\circ$ \texttt{Z\_shock}.
+  \end{center}
 
-\smallskip
-\begin{center}\small
-\texttt{z\_shock} $\circ$ \texttt{income} $\circ$ \texttt{savings}.
-\end{center}
+  Solving this chain gives us household \textbf{behaviour} given $a_0(\cdot), a_1(\cdot)$, and allows us to simulate the \textbf{true} model forward.
 \end{frame}
 
 \begin{frame}{K--S Outer Loop}
-
-\begin{enumerate}
-  \item \textbf{Pick} an initial ALM $(a_0^{(0)}, a_1^{(0)})$.
-  \item \textbf{Solve} the 4D household VFI given the current ALM.
-  \item \textbf{Simulate} a long economy under realised $\{Z_t\}$ and \emph{true} aggregation $K_t = \int b\, \mathrm d\Lambda_t$.
-  \item \textbf{Refit} $(a_0, a_1)$ by OLS of $\log K_{t+1}$ on $\log K_t$, separately per $Z$.
-  \item \textbf{Iterate} until ALM coefficients stop moving.
-\end{enumerate}
-
+  \begin{enumerate}
+    \item \textbf{Pick} an initial ALM $(a_0^{(0)}, a_1^{(0)})$.
+    \item \textbf{Solve} the 4D household VFI given the current ALM.
+    \item \textbf{Simulate} a long economy under realised $\{Z_t\}$ and \emph{true} aggregation $K_t = \int b\, \mathrm d\Lambda_t$.
+    \item \textbf{Refit} $(a_0, a_1)$ by OLS of $\log K_{t+1}$ on $\log K_t$, separately per $Z$.
+    \item \textbf{Iterate} until ALM coefficients stop moving.
+  \end{enumerate}
 \end{frame}
 
 % =============================================================
-\section[Implementing K--S]{Implementing K--S}
+\section{Implementing Krusell--Smith}
 % =============================================================
 
 \begin{frame}{Parameters}
+  \textbf{Krusell--Smith calibration} (1998):
+  \begin{itemize}
+    \item $\beta = 0.96$, $\gamma = 1$ (log utility), $\alpha = 0.36$, $\delta = 0.025$.
+    \item $Z \in \{0.99, 1.01\}$ with $\Pi_Z$ persistent ($0.875$ on-diagonal).
+    \item $z \in \{0.07, 1.0\}$.
+  \end{itemize}
 
-\textbf{Canonical K--S calibration} (1998):
-
-\begin{itemize}
-  \item $\beta = 0.96$, $\gamma = 1$ (log utility), $\alpha = 0.36$, $\delta = 0.025$.
-  \item $Z \in \{0.99, 1.01\}$ with $P_Z$ persistent ($0.875$ on-diagonal).
-  \item $z \in \{0.07, 1.0\}$.
-\end{itemize}
-
-\smallskip
-
-\textbf{Grids} (small, for pedagogical speed):
-
-\begin{itemize}
-  \item $N_w = 80$ on log-spaced $[0, 80]$.
-  \item $N_K = 5$ on linear $[10.5, 14.5]$.
-  \item Cell count: $80 \times 2 \times 2 \times 5 = 1600$.
-\end{itemize}
-
+  \textbf{Grids} (small for example):
+  \begin{itemize}
+    \item $N_b = 80$ on log-spaced $[0, 80]$.
+    \item $N_K = 5$ on linear $[10.5, 14.5]$.
+    \item Cell count: $80 \times 2 \times 2 \times 5 = 1600$.
+  \end{itemize}
 \end{frame}
 
-\begin{frame}{Setup: K-grid center at $Z = 1$}
+\begin{frame}[fragile]{State Layout}
+  \begin{lstlisting}
+  layout = StateLayout(
+      StateAxis(:wealth, continuous_grid(p.b_min, p.b_max; length=p.N_b, spacing=:log)),
+      StateAxis(:z,      p.z_grid),
+      StateAxis(:Z_idx,  [1, 2]),
+      StateAxis(:K,      continuous_grid(p.K_min, p.K_max; length=p.N_K)),
+  )
+  \end{lstlisting}
 
-Before the K--S iteration starts we need:
-
-\begin{itemize}
-  \item $\bar K$, the K-grid center (the agent's belief set).
-  \item $\Lambda_0$, the initial wealth distribution for the simulation.
-\end{itemize}
-
-\smallskip
-
-Both come from the \textbf{deterministic Aiyagari SS at $Z = 1$} --- the L4 tatonnement applied with $Z$ held fixed at the midpoint of $\{Z_{\text{bad}}, Z_{\text{good}}\}$. The 2D household block (no $Z$, no $K$ in the state) closes the loop on $K$ alone.
-
-\smallskip
-
-Tatonnement converges in ${\sim}10$ iterations to $\bar K \approx 13$ on this grid.
-
-\end{frame}
-
-\begin{frame}[fragile]{State layout}
-\begin{lstlisting}
-layout = StateLayout(
-    StateAxis(:wealth, continuous_grid(p.w_min, p.w_max;
-                                       length=p.N_w, spacing=:log)),
-    StateAxis(:z,      p.z_grid),
-    StateAxis(:Z_idx,  [1, 2]),
-    StateAxis(:K,      continuous_grid(p.K_min, p.K_max; length=p.N_K)),
-)
-\end{lstlisting}
-
-\vspace{0.4em}
-
-\begin{itemize}
-  \item Two continuous axes (\texttt{:wealth}, \texttt{:K}), two categorical (\texttt{:z}, \texttt{:Z\_idx}).
-  \item Same layout the simulator will use, modulo the chain we run on it.
-\end{itemize}
-
+  \begin{itemize}
+    \item Two continuous axes (\texttt{:wealth}, \texttt{:K}), two categorical (\texttt{:z}, \texttt{:Z\_idx}).
+  \end{itemize}
 \end{frame}
 
 \begin{frame}[fragile]{Stages 1--2: z\_shock and income \\ Stage 1--2}
-\begin{lstlisting}
-z_shock = MarkovStage(layout; axis=:z, transition=p.P_z)
+  \begin{lstlisting}
+  z_shock = MarkovStage(layout; axis=:z, transition=p.Π_z)
 
-income = WealthChangeStage(layout;
-    wealth_post=(cell; env) -> begin
-        Z  = p.Z_vals[cell.Z_idx]
-        pr = ks_prices(cell.K, Z, p)
-        (1 + pr.r) * cell.wealth + pr.w * cell.z
-    end,
-)
-\end{lstlisting}
+  income = WealthChangeStage(layout; wealth_post=(cell; env) -> begin
+      Z = p.Z_vals[cell.Z_idx]
+      (;R, w) = ks_prices(cell.K, Z, p)
+      R * cell.wealth + w * cell.z
+  end)
+  \end{lstlisting}
 
-\textbf{Note.} The income closure reads $(Z, K)$ \emph{from the cell coordinates}, not from \texttt{env}. So prices vary across cells \emph{within} a single solve.
-
+  \textbf{Note.} This reads $(Z, K)$ \emph{from the cell coordinates}.
 \end{frame}
 
 \begin{frame}[fragile]{Stage 3: ConsumptionSavings \\ Stage 3}
-\begin{lstlisting}
-savings = ConsumptionSavingsStage(layout;
-    β=p.β,
-    utility=(cell, c; env) -> u_crra(c, Val(p.γ)),
-    monotone_search=:divide_conquer,
-)
-\end{lstlisting}
+  \begin{lstlisting}
+  savings = ConsumptionSavingsStage(layout; β=p.β,
+      utility=(cell, c; env) -> u_crra(c, Val(p.γ)),
+      monotone_search=:divide_conquer)
+  \end{lstlisting}
 
-\vspace{0.4em}
-
-\begin{itemize}
-  \item Same stage as Aiyagari / spatial.
-  \item Utility is per-cell --- but here only depends on $c$.
-  \item Divide-and-conquer search exploits monotonicity in wealth.
-\end{itemize}
-
+  \begin{itemize}
+    \item Divide-and-conquer search exploits monotonicity in wealth.
+  \end{itemize}
 \end{frame}
 
 \begin{frame}[fragile]{Stages 4--5: K\_evolve and Z\_shock \\ Stage 4--5}
-\begin{lstlisting}
-K_evolve = WealthChangeStage(layout;
-    wealth_axis=:K,
-    wealth_post=(cell; env) -> begin
-        a0 = env.a0[cell.Z_idx]
-        a1 = env.a1[cell.Z_idx]
-        exp(a0 + a1 * log(cell.K))
-    end,
-)
+  \begin{lstlisting}
+  K_evolve = WealthChangeStage(layout; wealth_axis=:K,
+      wealth_post=(cell; env) ->
+          exp(env.a0[cell.Z_idx] + env.a1[cell.Z_idx] * log(cell.K)))
 
-Z_shock = MarkovStage(layout; axis=:Z_idx, transition=p.P_Z)
-\end{lstlisting}
-
-\textbf{K\_evolve} is a \emph{deterministic} mass-redistribution stage on \texttt{:K}, reading the ALM coefficients from \texttt{env}. \texttt{WealthChangeStage} isn't only for wealth --- it redistributes mass along any continuous axis; here we use it on \texttt{:K}.
-
+  Z_shock = MarkovStage(layout; axis=:Z_idx, transition=p.Π_Z)
+  \end{lstlisting}
 \end{frame}
 
-\begin{frame}[fragile]{Compose; declare moments}
-\begin{lstlisting}
-chain = z_shock ∘ income ∘ savings ∘ K_evolve ∘ Z_shock
+\begin{frame}[fragile]{Build Household Block}
+  \begin{lstlisting}
+  chain = z_shock ∘ income ∘ savings ∘ K_evolve ∘ Z_shock
 
-hh = define_moments!(chain;
-    K_supplied=at_end(integrand=:wealth, reduce=sum))
-\end{lstlisting}
-
-\vspace{0.4em}
-
-\begin{itemize}
-  \item \texttt{K\_supplied} sums $b$ over the end-of-period $\Lambda$ --- the integral that appears in the K-S iteration.
-  \item Used for the deterministic Aiyagari SS at $Z = 1$ \emph{and} for diagnostics during the K-S loop.
-\end{itemize}
-
+  hh = define_moments!(chain;
+      K_supplied=at_end(integrand=:wealth, reduce=sum))
+  \end{lstlisting}
 \end{frame}
 
-\begin{frame}[fragile]{Inner solve: VFI at a candidate ALM}
-\begin{lstlisting}
-a0_init = [log(K_bar), log(K_bar)]
-a1_init = [0.0,        0.0]
-env0    = make_env(hh; a0=a0_init, a1=a1_init)
+\begin{frame}[fragile]{Inner solve: VFI Given $a_0(\cdot), a_1(\cdot)$}
+  \begin{lstlisting}
+  a0_init = [log(K_bar), log(K_bar)]
+  a1_init = [0.0, 0.0]
+  env0 = make_env(hh_4d; a0=a0_init, a1=a1_init)
 
-ss = solve_steady_state_given_env!(hh, env0;
-                                   lambda_tol=1e-5,
-                                   lambda_maxiter=50_000)
-\end{lstlisting}
+  res4d = solve_steady_state_given_env!(hh_4d, env0; lambda_tol=1e-5, lambda_maxiter=50_000)
+  \end{lstlisting}
 
-\textbf{First guess.} A \emph{constant} ALM: $K_{t+1} = \bar K$ for both $Z$ states ($a_1 \equiv 0$, $a_0 \equiv \log \bar K$).
-
-\textbf{Cost.} ~400 inner VFI iterations on the 1600-cell grid.
+  \textbf{First guess.} A \emph{constant} ALM: $K_{t+1} = \bar K$ for both $Z$ states ($a_1 \equiv 0$, $a_0 \equiv \log \bar K$).
 \end{frame}
 
-\begin{frame}{Simulation: why a separate chain}
+\begin{frame}{Simulation Household Block}
 
-When we simulate we want \emph{realised} $(Z_t, K_t)$, not the agent's belief.
+  When we simulate we want \emph{realised} $(Z_t, K_t)$, not the agent's belief.
 
-\smallskip
+  The behavioural chain's K\_evolve and Z\_shock encode the \emph{belief}, not the true law of motion for $K$.
 
-The chain's K\_evolve and Z\_shock encode the \emph{belief}: they would push $K$ along the ALM and $Z$ along $P_Z$, regardless of what actually realised.
-
-\smallskip
-
-\textbf{Solution.} Build a second chain --- just the first three stages (\texttt{z\_shock} $\circ$ \texttt{income} $\circ$ \texttt{savings}) --- and drive its $(Z, K)$ from outside.
-
+  The true chain has just the first three stages (\texttt{z\_shock} $\circ$ \texttt{income} $\circ$ \texttt{savings}) and $Z, K$ are updated in an \textbf{outer loop}.
 \end{frame}
 
-\begin{frame}{One simulation step}
-
-Maintain $\Lambda_t$ as a \emph{2D} distribution on $(b, z)$. Each period:
-\begin{enumerate}
-  \item Compute $K_t = \sum_{b, z} b\, \Lambda_t[b, z]$.
-  \item Lift $\Lambda_t$ to a 4D distribution concentrated at $(Z_t, K_t)$ --- share-redistributed between the two adjacent K-grid points.
-  \item Push the 4D distribution through the sim chain (3 stages).
-  \item Marginalise out $(Z, K)$ to get $\Lambda_{t+1}$ on $(b, z)$.
-  \item Draw $Z_{t+1} \mid Z_t$ from $P_Z$.
-\end{enumerate}
-
-\end{frame}
-
-\begin{frame}[fragile]{Seating the simulation chain}
-\begin{lstlisting}
-hh_sim = ks_household_sim(p)
-# Run backward on the sim chain with the converged V_ss as
-# terminal value, so its savings policy is materialised.
-backward!(hh_sim, copy(ss.V), (;))
-\end{lstlisting}
-
-\vspace{0.4em}
-
-\begin{itemize}
-  \item The sim chain has no K\_evolve/Z\_shock, so it does not need ALM coefficients in env.
-  \item \texttt{backward!} fills the savings policy from the inner-solve $V^*$.
-  \item Then \texttt{ks\_simulate} can push $\Lambda$ forward.
-\end{itemize}
-
+\begin{frame}{Simulating the True Model}
+  Each period:
+  \begin{enumerate}
+    \item Compute $K_t = \sum_{b, z} b\, \Lambda_t[b, z]$.
+    \item Lift $\Lambda_t$ to a 4D distribution, adding $(Z_t, K_t)$ as ``idosyncratic'' state variables.
+    \item Simulate the 4D distribution using the behavioural chain (5 stages).
+    \item Marginalise out $(Z, K)$ to get $\Lambda_{t+1}$ on $(b, z)$.
+    \item Draw $Z_{t+1} \mid Z_t$ from $\Pi_Z$.
+  \end{enumerate}
 \end{frame}
 
 \begin{frame}[fragile]{Refit the ALM by OLS}
-\begin{lstlisting}
-function regress_ALM(K_path, Z_idx_path, z_idx, window)
-    rows = [t for t in window if Z_idx_path[t] == z_idx]
-    x = log.(K_path[rows])
-    y = log.(K_path[rows .+ 1])
-    # OLS: y = a0 + a1 * x ; R² = 1 - SS_res/SS_tot
-    ...
-    return (; a0, a1, R², n)
-end
+  \begin{lstlisting}
+  function regress_ALM(K_path, Z_idx_path, z_idx, window)
+      rows = [t for t in window if Z_idx_path[t] == z_idx]
+      x = log.(K_path[rows])
+      y = log.(K_path[rows .+ 1])
+      # OLS: y = a0 + a1 * x ; R² = 1 - SS_res/SS_tot
+      ...
+      return (; a0, a1, R², n=length(rows))
+  end
 
-fit_bad  = regress_ALM(sim.K_path, sim.Z_idx_path, 1, window_fit)
-fit_good = regress_ALM(sim.K_path, sim.Z_idx_path, 2, window_fit)
-\end{lstlisting}
-
-\textbf{Two regressions} (one per $Z$). Burn-in 500, fit-window the rest.
-
+  fit_bad  = regress_ALM(sim0.K_path, sim0.Z_idx_path, 1, window_fit)
+  fit_good = regress_ALM(sim0.K_path, sim0.Z_idx_path, 2, window_fit)
+  \end{lstlisting}
 \end{frame}
 
-\begin{frame}[fragile]{The outer loop}
-\begin{lstlisting}
-function ks_iterate(p, K_bar, Λ_0; maxiter=15)
-    hh, hh_sim = ks_household(p), ks_household_sim(p)
-    a0, a1 = [log(K_bar), log(K_bar)], [0.0, 0.0]
-    for it in 1:maxiter
-        _ss = solve_steady_state_given_env!(hh, make_env(hh; a0, a1); ...)
-        backward!(hh_sim, copy(_ss.V), (;))
-        sim = ks_simulate(hh_sim, p, T_sim; Λ_init=Λ_0, Z_init_idx=1)
-        fit_b = regress_ALM(sim.K_path, sim.Z_idx_path, 1, window_fit)
-        fit_g = regress_ALM(sim.K_path, sim.Z_idx_path, 2, window_fit)
-        a0_n, a1_n = [fit_b.a0, fit_g.a0], [fit_b.a1, fit_g.a1]
-        Δ = maximum(abs.(vcat(a0_n .- a0, a1_n .- a1)))
-        Δ < 1e-3 && return (; a0, a1, sim, iters=it)
-        a0 = 0.5 .* a0 .+ 0.5 .* a0_n
-        a1 = 0.5 .* a1 .+ 0.5 .* a1_n
-    end
-end
-\end{lstlisting}
-\end{frame}
+\begin{frame}[fragile]{The Outer Loop}
+  (Too long for the slide; see notebook.)
+  
+  \begin{lstlisting}
+  function ks_iterate(p::KSParams, K_bar, Λ_0; update_speed=0.5, rtol=1e-3, maxiter=20, T_sim=2000, T_burn=500)
+      hh_4d = behavioural_alm_household(p)
+      a0 = [log(K_bar), log(K_bar)]
+      a1 = [0.0, 0.0]
+      err, iters = Inf, 0
+      while err >= rtol
+          env = make_env(hh_4d; a0, a1)
+          solve_steady_state_given_env!(hh_4d, env; lambda_tol=1e-5, lambda_maxiter=50_000)
 
-\begin{frame}{Running it}
+          sim = ks_simulate(hh_4d, p; T=T_sim, Λ_init=Λ_0, Z_init=1)
+          window_fit = (T_burn + 1):(T_sim - 1)
+          fit_bad  = regress_ALM(sim.K_path, sim.Z_idx_path, 1, window_fit)
+          fit_good = regress_ALM(sim.K_path, sim.Z_idx_path, 2, window_fit)
 
-\textbf{Convergence behaviour.}
+          a0_new = [fit_bad.a0, fit_good.a0]
+          a1_new = [fit_bad.a1, fit_good.a1]
+          err = maximum(abs.(vcat(a0_new .- a0, a1_new .- a1)))
 
-\begin{itemize}
-  \item Converges in \textbf{11 outer iterations} to $\Delta < 10^{-3}$.
-  \item Inner VFI: ${\sim}400$ iters each outer round, falling as we approach the fixed point.
-  \item Mean $K$ over the post-burn-in window: ${\approx}\,13.70$.
-\end{itemize}
-
-\smallskip
-
-An update speed of $0.5$ on the coefficient update prevents the first few rounds from overshooting.
-
-\end{frame}
-
-% =============================================================
-\section[Accuracy]{The Accuracy Debate}
-% =============================================================
-
-\begin{frame}{The converged ALM}
-
-After 11 outer iterations:
-\[
-  \log K_{t+1} = 0.18 + 0.93\, \log K_t \quad (Z = \text{bad}),
-\]
-\[
-  \log K_{t+1} = 0.15 + 0.94\, \log K_t \quad (Z = \text{good}).
-\]
-
-\smallskip
-
-Coefficients on $\log K_t$ are close ($0.93$ vs $0.94$); intercepts differ ($0.18$ vs $0.15$) and pick up the level shift between recession and boom.
-
-\smallskip
-
-Just four numbers describe the dynamics of $K$ across all states of the wealth distribution.
-
-\end{frame}
-
-\begin{frame}{The shocking result: $R^2 \approx 1$}
-
-The converged ALM regression:
-
-\begin{itemize}
-  \item $Z = \text{bad}$: $R^2 = 0.99696$.
-  \item $Z = \text{good}$: $R^2 = 0.99862$.
-\end{itemize}
-
-\smallskip
-
-\textbf{Reading this.} A linear function of $\log K_t$ explains the variation in $\log K_{t+1}$ within each $Z$ state \emph{essentially completely}.
-
-\smallskip
-
-\textbf{Implication.} The full distribution $\Lambda_t$ adds no usable information beyond its mean $K_t$. The household that knows only $K_t$ forecasts as well as the household that knew all of $\Lambda_t$.
-
-\end{frame}
-
-\begin{frame}{The Den Haan critique}
-
-$R^2$ averages residuals over many periods --- it can hide \emph{systematic drift}: a small one-step bias compounds over the long run.
-
-\smallskip
-
-\textbf{Den Haan (2010).} A sharper diagnostic. Starting from a common $K_0$:
-
-\begin{itemize}
-  \item Compute the true $K_t$ path by aggregating household decisions every period.
-  \item Compute an ALM-only path: $K_{t+1} = \exp(a_0(Z_t) + a_1(Z_t) \log K_t)$, no aggregation.
-\end{itemize}
-
-Compare over hundreds of periods.
-
-\end{frame}
-
-\begin{frame}{What we see}
-
-In this calibration, over 800 post-burn-in periods:
-\[
-  \max_t \left|\frac{K_t^{\text{ALM}} - K_t^{\text{true}}}{K_t^{\text{true}}}\right| \approx 0.81\%.
-\]
-
-\smallskip
-
-The ALM-only path tracks the true path to within about 1\% throughout the simulation.
-
-\smallskip
-
-\textbf{Interpretation.} The bounded-rationality assumption is essentially exact here. K--S agents forecast as well as fully rational ones --- not just on average, but trajectory-by-trajectory.
-
-\end{frame}
-
-\begin{frame}{When K--S works, when it breaks}
-
-\textbf{K--S works} when:
-
-\begin{itemize}
-  \item Savings near-linear in wealth.
-  \item Agents relatively patient.
-  \item No large MPC heterogeneity.
-\end{itemize}
-
-\textbf{K--S can break} when:
-
-\begin{itemize}
-  \item Occupation choice / extensive-margin entry.
-  \item Fat-tailed income shocks.
-  \item Non-CRRA $u(c)$ (habits, loss aversion).
-  \item Bankruptcy / default.
-\end{itemize}
-
-\end{frame}
-
-\begin{frame}{What the linear ALM cannot see}
-
-The ALM compresses $\Lambda_t$ into a scalar. Structural changes that move wealth between agents with different MPCs --- or shift mass between regimes (constrained vs unconstrained) --- without moving $K_t$ much are \emph{invisible} to the ALM.
-
-\smallskip
-
-In the baseline calibration these movements happen to have small impact on $K_{t+1}$. In richer models they do not.
-
-\smallskip
-
-\textbf{This is the wedge L8 will exploit.}
-
+          a0 = (1 - update_speed) .* a0 .+ update_speed .* a0_new
+          a1 = (1 - update_speed) .* a1 .+ update_speed .* a1_new
+          iters += 1
+      end
+      return (; a0, a1, sim, fit_bad, fit_good, iters)
+  end
+  \end{lstlisting}
 \end{frame}
 
 \end{document}

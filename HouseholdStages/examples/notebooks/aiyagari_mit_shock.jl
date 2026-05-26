@@ -83,7 +83,7 @@ p = MITShockParams()
 #--------------------------#
 
 hh   = aiyagari_household(p)
-dims = layout_size(first(hh.spec.stages).input_layout)
+dims = layout_size(input_layout(hh))
 
 @printf "Layout: wealth %d × income %d = %d cells\n" dims[1] dims[2] prod(dims)
 

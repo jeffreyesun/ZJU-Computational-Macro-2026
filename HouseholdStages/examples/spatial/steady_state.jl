@@ -4,10 +4,7 @@
 
 # Damped tatonnement on `(K_home, K_abroad)` under location-specific
 # TFP. The per-pair inner work is delegated to
-# `HouseholdStages.solve_steady_state_given_env!`; the outer
-# tatonnement is rolled here (see `PROJECT_PLAN.md` Decisions log
-# 2026-05-18 for the principle).
-
+# `HouseholdStages.solve_steady_state_given_env!`
 include("model.jl")
 
 using Printf

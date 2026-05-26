@@ -6,90 +6,56 @@
 \usepackage{array}
 \usepackage{enumitem}
 \usepackage{hyperref}
-\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
 
 \title{Continuation Value is All You Need: \\
-       Computational Methods for Heterogeneous-Agent Macro}
-\author{Jeffrey Sun \\
-        \texttt{je.sun@utoronto.ca}}
+Computational Methods for Heterogeneous-Agent Macro}
+\author{Jeffrey Sun$^1$\footnote{University of Toronto. Based on a course originally taught at Zhejiang University made possible by a CES--Chow Fellowship for Short-Term Teaching in China.}}
 \date{}
 
 \begin{document}
+\date{May 2026}
 \maketitle
 
+\vspace*{-1em}
 \section*{Course Overview}
 
-These notes are a self-study introduction to computational methods for
-solving macroeconomic models with dynamics, heterogeneous agents, and
-varying assumptions about expectations. The vehicle is Julia: every
-lecture builds and runs the model it discusses. Starting from a
-single-agent consumption--savings model, the materials build up to
-representative-agent general equilibrium, then heterogeneous-agent
-general equilibrium, and finally to the ``Continuation Value is All You
-Need'' (CVIAYN) method for solving heterogeneous-agent dynamic models
-with aggregate uncertainty, as in Sun (2026).
+We study computational methods for solving macroeconomic models with dynamics, heterogeneous agents, and varying
+assumptions about expectations. The course is interactive with Jupyter notebooks written in the programming language Julia.
 
-The package consists of eight paired deliverables: a slide deck and a
-tutorial notebook for each lecture. The notebooks are designed to be
-run cell-by-cell; the slides serve as a guided reading companion. Code
-appearing in the slides is verbatim from the matching notebook.
+The code introduces my package HouseholdStages.jl for building very rich heterogeneous-agent household blocks.
 
-\section*{Materials}
+Starting with a simple consumption-savings
+model of a single agent, we will build up to representative-agent
+general equilibrium models, then heterogeneous-agent general
+equilibrium models. We then show how to solve these models
+in steady state, in deterministic transitions, and two methods for
+solving them with aggregate uncertainty: the Krusell-Smith method
+and my own Neural Value Function Iteration (nVFI).
 
-No textbooks are required. The slide decks and tutorial notebooks are
-the full set of materials.
+The course consists of 8 lectures, each of which has a
+slide deck and Julia notebook. The notebooks are not quite standalone.
+For self-study, the ideal reading order is to read the slides first
+before running the corresponding notebook.
 
 \section*{Lectures}
 
-\renewcommand{\arraystretch}{1.3}
-\begin{longtable}{@{}p{0.16\textwidth} p{0.80\textwidth}@{}}
-\toprule
-\textbf{Lecture} & \textbf{Description} \\
-\midrule
-\endfirsthead
-\toprule
-\textbf{Lecture} & \textbf{Description} \\
-\midrule
-\endhead
-\bottomrule
-\endfoot
+\begin{enumerate}
+  \item \textbf{Introduction.} The consumption--savings problem in recursive form. The Bellman equation.
 
-\textbf{L1}
-& \textbf{Dynamic Modelling.} The consumption--savings problem in
-  recursive form. \\
+  \item \textbf{Computation.} The Julia language. Implementing Value Function Iteration (VFI).
 
-\textbf{L2}
-& \textbf{Computation.} A working tour of Julia, then value function
-  iteration end-to-end. \\
+  \item \textbf{Heterogeneity.} Simulating individuals and populations forward given the value function.
 
-\textbf{L3}
-& \textbf{Heterogeneity.} Reading the grid-based solution as a
-  description of a population. Solving for agents heterogeneous in
-  dimensions beyond wealth. \\
+  \item \textbf{Equilibrium.} Heterogeneous agents in equilibrium: the Aiyagari model.  The Household Stage concept and HouseholdStages.jl package.
 
-\textbf{L4}
-& \textbf{Equilibrium.} Heterogeneous agents in equilibrium: the
-  Aiyagari model. Recursive equilibrium and its computation. \\
+  \item \textbf{Expectations.} Transition dynamics in the Aiyagari model.
 
-\textbf{L5}
-& \textbf{Transitions.} Perfect-foresight transition dynamics in
-  Aiyagari. \\
+  \item \textbf{Spatial Heterogeneity and Calibration.} A spatial model with Gumbel migration. An example of indirect inference: calibrating location preference shifters to match populations.
 
-\textbf{L6}
-& \textbf{Spatial Heterogeneity and Calibration.} A spatial Aiyagari
-  model with Gumbel migration; calibrating preference shifters to
-  population data by indirect inference. \\
+  \item \textbf{Uncertainty.} The Krusell--Smith model. The Krusell--Smith method.
 
-\textbf{L7}
-& \textbf{Uncertainty.} The Krusell--Smith model. Aggregate shocks,
-  the state-space explosion, and the simulation-and-regression
-  workaround. \\
-
-\textbf{L8}
-& \textbf{Continuation Value is All You Need.} Parameterizing the
-  continuation value with a neural network and training on the outer
-  Bellman residual. \\
-
-\end{longtable}
+  \item \textbf{Continuation Value is All You Need.} Solving heterogeneous-agent model with aggregate uncertainty using Neural Value Function Iteration.
+\end{enumerate}
 
 \end{document}

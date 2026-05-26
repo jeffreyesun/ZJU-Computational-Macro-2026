@@ -8,9 +8,6 @@
 \setsansfont{Latin Modern Sans}
 \setmonofont{DejaVu Sans Mono}[Scale=0.85]
 
-% Composition operator: ∘ with subscript s. Same convention as L05.
-\newcommand{\circs}{\mathbin{\circ_s}}
-
 \title{Lecture 6: Spatial Heterogeneity and Calibration}
 \subtitle{Computational Methods for Heterogeneous-Agent Macro}
 \author{Jeffrey Sun}
@@ -22,487 +19,222 @@
 \maketitle
 
 % =============================================================
-\section[A Spatial Aiyagari]{A Spatial Aiyagari}
+\section[Introduction]{Introduction: A Small-Open-Economy Spatial Model}
 % =============================================================
 
-\begin{frame}{Setting: three locations}
-
-\begin{itemize}
-  \item Three locations \texttt{loc1}, \texttt{loc2}, \texttt{loc3}.
-  \item Each produces \textbf{the same single good}: a costlessly-tradable, perfectly-substitutable numeraire.
-  \item Each has its own \textbf{productivity} $A_j$: $A_1 > A_2 > A_3$.
-  \item Local production: $Y_j = A_j K_j^{\alpha} L_j^{1-\alpha}$.
-\end{itemize}
-
+\begin{frame}{Three Locations}
+  \begin{itemize}
+    \item Three locations $j\in\{1,2,3\}$.
+    \item Each produces a costlessly-tradable, perfectly-substitutable numeraire.
+    \item Each has its own \textbf{exogenous productivity} $A_j$: $A_1 > A_2 > A_3$.
+    \item Local Cobb-Douglas production: $Y_j = A_j K_j^{\alpha} L_j^{1-\alpha}$.
+  \end{itemize}
 \end{frame}
 
 \begin{frame}{Households}
-
-\begin{itemize}
-  \item Each household has one unit of inelastic labor.
-  \item \textbf{State} this period: $(b, j)$ --- wealth + current location.
-  \item \textbf{No} idiosyncratic income shocks. Within $j$, every household earns $w_j$.
-  \item All heterogeneity is over $(b, j)$.
-\end{itemize}
-
+  \begin{itemize}
+    \item Each household supplies one unit of labour inelastically.
+    \item \textbf{Idiosyncratic state}: $(b, j)$, wealth $b$ and current location $j$.
+    \item No idiosyncratic income shocks. Within $j$, every household earns $w_j$.
+  \end{itemize}
 \end{frame}
 
-\begin{frame}{One bond market}
+\begin{frame}{Bond Market}
+  Households save in a liquid asset, trade with the rest of the world at exogenous interest rate $r$.
 
-\begin{itemize}
-  \item \textbf{One asset}, traded freely across the three locations and with the rest of the world.
-  \item Capital flows freely $\Rightarrow$ \textbf{MPK equalized}: $r + \delta = \alpha A_j (L_j / K_j)^{1 - \alpha}$.
-  \item Wages adjust: $w_j = (1 - \alpha) A_j \left( \frac{\alpha A_j}{r + \delta} \right)^{\alpha / (1 - \alpha)}$.
-\end{itemize}
-
+  This also pins down capital and wages:
+  \begin{align*}
+    r + \delta &= \alpha A_j (L_j / K_j)^{1 - \alpha}\\
+    w_j &= (1 - \alpha) A_j \left( \frac{\alpha A_j}{r + \delta} \right)^{\alpha / (1 - \alpha)}.
+  \end{align*}
 \end{frame}
 
-\begin{frame}{Where does $r$ come from?}
-
-\begin{itemize}
-  \item \textbf{Small open economy.} The country is \emph{small} in the world bond market $\Rightarrow$ $r$ is taken as given (exogenous, $r = 0.03$).
-  \item \textbf{Why exogenous today?} Without idiosyncratic income shocks, household saving is weak; endogenous $r$ would sit at the saving boundary $1/\beta - 1$. Exogenous $r$ lets us focus on \textbf{migration + calibration} without bond-market fragility.
-  \item \textbf{Trade-off:} the asset market is degenerate; everything else gets a clean treatment.
-\end{itemize}
-
+\begin{frame}{Within-Period Stage Chain}
+  \begin{enumerate}
+    \item \textbf{Migration.}
+    \begin{itemize}
+      \item Households draw Gumbel taste shocks over destinations
+      \item Pick $j'$, pay cost $C[j, j']$, get amenity bonus $\alpha_{j'}$.
+    \end{itemize}
+    \item \textbf{Wealth update.} At destination $j'$: $b' \gets (1 + r) b + w_{j'}$.
+    \item \textbf{Consumption / savings.} Choose next-period wealth.
+  \end{enumerate}
+  Household block in Stage notation:
+  \[
+    \text{Migration} \circ \text{WealthChange} \circ \text{ConsumptionSavings}
+  \]
 \end{frame}
 
-\begin{frame}{Within-period chain}
-
-\begin{enumerate}
-  \item \textbf{Migration.} Draw a Gumbel taste shock over destinations. Pick $j'$, pay cost $C[j, j']$, get amenity bonus $\alpha_{j'}$.
-  \item \textbf{Wealth update.} At destination $j'$: $b' \gets (1 + r) b + w_{j'}$.
-  \item \textbf{Consumption / savings.} Choose next-period wealth.
-\end{enumerate}
-
-\vspace{0.5em}
-
-The chain (compact form):
-\[
-\text{Migr.} \circs \text{WealthCh.} \circs \text{ConsSav.}
-\]
-
-\end{frame}
-
-\begin{frame}{What we want to know}
-
-\textbf{Steady-state objects:}
-
-\begin{itemize}
-  \item Population shares $s_j$ across locations.
-  \item Wealth distribution $\Lambda(b, j)$ (joint).
-  \item Aggregate $K_{\text{total}} = \sum_b b\, \Lambda(b, \cdot)$.
-  \item Value function $V(b, j)$.
-\end{itemize}
-
-\vspace{0.3em}
-
-Prices $(r, w)$ — where $w = (w_1, w_2, w_3)$ — are pinned down before the household solve.
-
+\begin{frame}{Steady State Objects}
+  Given parameters, the model should output the \textbf{steady state} values of,
+  \begin{itemize}
+    \item Population shares $s_j$ across locations.
+    \item Wealth distribution $\Lambda(b, j)$.
+    \item Aggregate $K_{\text{total}} = \sum_b b\, \Lambda(b, \cdot)$.
+    \item Value function $V(b, j)$.
+  \end{itemize}
+  Note: Prices $r$ and $\{w_j\}_j$ are pinned down before passing to the household block.
 \end{frame}
 
 % =============================================================
 \section[MigrationStage]{MigrationStage}
 % =============================================================
 
-\begin{frame}{The Gumbel choice problem}
+\begin{frame}{Gumbel (AKA Logit) Taste Shocks}
+  Each household $h$ in location $i$ draws idiosyncratic \textbf{Gumbel taste shocks} $\varepsilon_{hj} \sim \text{EV1}$ from a Gumbel distribution, one for each destination $j$.
 
-At origin $i$, the per-destination payoff is
-\[
-u_{ij} = -C[i, j] + \alpha_j + V_{\text{end}}(j, b),
-\]
+  At origin $i$, the per-destination payoff is
+  \begin{align*}
+    u_{hij} &= u_{ij} + \eta \varepsilon_{hj},\\
+    \text{with}\quad u_{ij} &= \alpha_j -C[i, j] + \Vend(b, j).
+  \end{align*}
 
-\begin{itemize}
-  \item plus an idiosyncratic \textbf{Gumbel taste shock} $\varepsilon_j \sim \text{EV1}$ (i.i.d.\ over $j$).
-  \item The household picks $j^\star = \arg\max_j \big( u_{ij} + \eta \cdot \varepsilon_j \big)$, where $\eta$ is the shock \textbf{scale}.
-\end{itemize}
+  The household solves,
+  \[
+    j'_h = \arg\max_j u_{ij} + \eta\varepsilon_{hj}.
+  \]
 
+  Note: A \textbf{higher} value of $\eta$ makes households \textbf{less} sensitive to spatial wage differentials via $\Vend$.
 \end{frame}
 
-\begin{frame}{The log-sum-exp formula}
+\begin{frame}{Choice Probabilities}
+  With $\varepsilon_{hj} \sim \text{EV1}$, two classical facts:
 
-\begin{itemize}
-  \item With $\varepsilon_j \sim \text{EV1}$, two classical facts:
-  \item \textbf{(a) Choice probabilities are logit:}
-\end{itemize}
+  \textbf{(a) Choice probabilities are logit:}
+  \[
+  \Pr(j \mid i, b) = \frac{\exp(u_{ij} / \eta)}{\sum_k \exp(u_{ik} / \eta)}.
+  \]
 
-\[
-\Pr(j \mid i, b) = \frac{\exp(u_{ij} / \eta)}{\sum_k \exp(u_{ik} / \eta)}.
-\]
-
-\textbf{(b) Expected value is the inclusive value:}
-\[
-\E\Big[\max_j (u_{ij} + \eta \cdot \varepsilon_j)\Big] = \eta \log \sum_k \exp\!\big(u_{ik} / \eta \big).
-\]
-
+  \textbf{(b) Expected value is given by:}
+  \[
+  \E\Big[\max_j (u_{ij} + \eta \cdot \varepsilon_{hj})\Big] = \eta \log \sum_k \exp\!\big(u_{ik} / \eta \big).
+  \]
 \end{frame}
 
-\begin{frame}{Why log-sum-exp matters}
+\begin{frame}{Mathematical Definition of \texttt{MigrationStage}}
+  \textbf{$V$ Backward:}
+  \[
+  V_{\text{pre}}(b, i) = \eta \log \sum_j \exp\!\frac{- C[i,j] + \alpha_j + V_{\text{end}}(b, j)}{\eta}.
+  \]
 
-\begin{itemize}
-  \item $\max$ is non-smooth, non-differentiable at ties.
-  \item $\eta \log \sum \exp(\cdot / \eta)$ is \textbf{smooth} in its arguments.
-  \item As $\eta \to 0$: recovers $\max$ (the argmax wins).
-  \item As $\eta \to \infty$: all choices equally likely (random allocation).
-  \item $\eta$ is a \textbf{smoothing} / preference-noise parameter.
-\end{itemize}
-
-\end{frame}
-
-\begin{frame}{The \texttt{MigrationStage} kernel}
-
-\textbf{Backward pass (computes $V_{\text{pre}}$):}
-\[
-V_{\text{pre}}(b, i) = \eta \log \sum_j \exp\!\frac{- C[i,j] + \alpha_j + V_{\text{end}}(b, j)}{\eta}.
-\]
-
-\textbf{Forward pass (pushes $\Lambda$):}
-\[
-\Lambda_{\text{post}}(b, j) = \sum_i \Pr(j \mid i, b)\, \Lambda_{\text{pre}}(b, i).
-\]
-
-\vspace{0.4em}
-
-Same kernel as the static logit, threaded through the chain by V/$\Lambda$ duality.
-
-\end{frame}
-
-\begin{frame}[fragile]{The API \\ API}
-\begin{lstlisting}
-migration = MigrationStage(layout;
-    migration_cost = C,                         # (n_loc, n_loc) origin → dest
-    amenity        = (dest; env) -> env.α[loc_idx(dest)],
-    ε              = p.η_logit,                 # Gumbel scale η
-)
-\end{lstlisting}
-
-\vspace{0.4em}
-
-\begin{itemize}
-  \item Cost is a static matrix; the amenity closure reads $\alpha$ off \texttt{env} on every backward pass.
-  \item The Greek-kwarg \texttt{ε} is the stage's name for the Gumbel scale; we pass \texttt{p.η\_logit} into it.
-  \item Stage allocates the $(\text{cells}, n_{\text{loc}})$ probability tensor itself.
-\end{itemize}
-
-\end{frame}
-
-\begin{frame}{Preference shifters $\alpha_j$}
-
-A per-destination utility add-on $\alpha_j$ enters the migration payoff additively:
-\[
-u_{ij} = -C[i, j] + \alpha_j + V_{\text{end}}(j, b).
-\]
-
-\vspace{0.3em}
-
-\begin{itemize}
-  \item $\alpha = (\alpha_1, \alpha_2, \alpha_3)$ lives on \texttt{env} (not the Spec), so we vary it just by rebuilding \texttt{env}. Normalization $\alpha_1 \equiv 0$ (only differences are identified).
-  \item The calibration loop in §5 will iterate on $\alpha$ to match observed shares.
-\end{itemize}
-
-\end{frame}
-
-\begin{frame}[fragile]{The household block in code}
-\begin{lstlisting}
-layout = StateLayout(
-    StateAxis(:wealth,   continuous_grid(0, 25; length=250, spacing=:log)),
-    StateAxis(:location, categorical(collect(LOC_NAMES))))
-
-amenity = (dest; env) -> env.α[loc_idx(dest)]
-migration = MigrationStage(layout; migration_cost=p.C_base, amenity, ε=p.η_logit)
-income = WealthChangeStage(layout; wealth_post=function(cell; env)
-    return (1 + env.r) * cell.wealth + env.w[loc_idx(cell.location)]
-end)
-savings = ConsumptionSavingsStage(layout; β=p.β,
-    utility=(cell, c; env) -> u_crra(c, Val(p.σ)))
-
-hh = migration ∘ income ∘ savings
-define_moments!(hh;
-    K_total = at_end(integrand=(cell; env) -> cell.wealth, reduce=sum),
-    L       = at_end(integrand=(cell; env) -> Float64[cell.location == j for j in LOC_NAMES], reduce=sum))
-\end{lstlisting}
+  \textbf{$\Lambda$ Forward:}
+  \[
+  \Lambda_{\text{post}}(b, j) = \sum_i \Pr(j \mid i, b)\, \Lambda_{\text{pre}}(b, i).
+  \]
 \end{frame}
 
 % =============================================================
 \section[Steady State]{Steady State}
 % =============================================================
 
-\begin{frame}{A new kind of outer loop}
-
-\begin{itemize}
-  \item L4: outer loop on $\bar K$ (Aiyagari market clearing).
-  \item L5: outer loop on the path $\{K_t\}$ (transitions).
-  \item \textbf{L6: outer loop on $\alpha$ (calibration).} $r$ is exogenous; $w_j(r, A_j)$ closed-form. The outer iteration matches population shares.
-  \item Each outer step is one \texttt{solve\_steady\_state\_given\_env!} call.
-\end{itemize}
-
-\end{frame}
-
 \begin{frame}[fragile]{Inner solve}
-\begin{lstlisting}
-function solve_household(hh, p, α; V_init=nothing, Λ_init=nothing)
-    env = make_env(hh; r=p.r, w=spatial_wage.(p.r, p.A, p), α)
-    (;V, Λ, moments, history) = solve_steady_state_given_env!(hh, env; V_init, Λ_init)
-    shares = moments.L ./ sum(moments.L)
-    return (; V, Λ, env, moments, shares, history)
-end
-\end{lstlisting}
+  The library function \texttt{solve\_steady\_state\_given\_env!}, given \texttt{env}, iterates V backward to fixed point (VFI), iterates $\Lambda$ forward to convergence, then computes moments.
 
-\textbf{V} backward to fixed point at \texttt{env}, then \textbf{$\Lambda$} forward to stationarity. Then read moments.
-
-\end{frame}
-
-\begin{frame}{Demo run at the initial guess $\alpha = 0$}
-
-\emph{Before} the calibration loop starts. With $r = 0.03$, $A = (1.20, 1.00, 0.85)$, $\alpha = (0, 0, 0)$:
-
-\begin{itemize}
-  \item Wages: $w = (1.66, 1.25, 0.97)$.
-  \item Shares: $(0.39, 0.37, 0.25)$.
-  \item $K_{\text{total}} = 0.75$.
-\end{itemize}
-
-\vspace{0.4em}
-
-At $\alpha = 0$, \texttt{loc1}'s high productivity makes it the most attractive destination; \texttt{loc3}'s low wage drives population out. The calibration will fix that.
-
-\end{frame}
-
-\begin{frame}{Reading $V$ across locations}
-
-At fixed wealth $b$:
-\[
-V(b, j) \gtrless V(b, j')
-\]
-
-\begin{itemize}
-  \item purely from wage differences and the cost structure $C[i, j]$.
-  \item \textbf{Migration choice} comes from comparing $V_{\text{end}}(j, b')$ at the wealth $b'$ implied by moving to $j$.
-  \item (Implementation: the \texttt{MigrationStage} kernel populates \texttt{choice\_prob}, a $(N_w, 3, 3)$ tensor.)
-\end{itemize}
-
+  \begin{lstlisting}
+  function solve_household(hh, p; V_init=nothing, Λ_init=nothing)
+      env = make_env(hh; r=p.r, w=spatial_wage.(p.r, p.A, p))
+      (;V, Λ, moments) = solve_steady_state_given_env!(hh, env; V_init, Λ_init)
+      shares = moments.L ./ sum(moments.L)
+      return (; V, Λ, env, moments, shares)
+  end
+  \end{lstlisting}
 \end{frame}
 
 % =============================================================
-\section[Calibration]{Calibration}
+\section[$\alpha$ Calibration]{Calibration of $\alpha$}
 % =============================================================
 
-\begin{frame}{Calibration: model meets data}
+\begin{frame}{Outer Loop: Indirect Inference}
+  This is an example of how calibration via \textbf{indirect inference} can be thought of as an\\ \textbf{outer loop} around the household block.
 
-\begin{itemize}
-  \item \textbf{Familiar example (L4):} pick $\beta$ so that the model's $K/Y$ matches the data $K/Y$. One parameter, one moment.
-  \item \textbf{Today:} pick \textbf{preference shifters} $\alpha = (\alpha_1, \alpha_2, \alpha_3)$ so that the model's \textbf{population shares} match the data shares.
-  \item Three parameters, three moments. (Normalization $\alpha_1 = 0$ leaves two free; shares sum to 1 leaves two binding.)
-\end{itemize}
-
+  \textbf{Note:} In reality, all parameters would be calibrated together in a joint or nested way. In this lesson, we take all other parameters as given for simplicity.
 \end{frame}
 
-\begin{frame}{The data we want to match}
+\begin{frame}{Calibrating $\alpha$}
+  Suppose that in the data we observe shares,
+  \[
+    s^\text{data} = (0.30, 0.30, 0.40).
+  \]
+  We want to match these shares in the model-simulated data.
 
-\textbf{Synthetic target:}
-\[
-s^{\text{data}} = (0.30,\ 0.30,\ 0.40).
-\]
+  The structure of the model implies that each steady-state population share $s_j^\text{model}$ is increasing in $\alpha_j$.
 
-\vspace{0.4em}
-
-\begin{itemize}
-  \item The data say \texttt{loc3} houses \emph{40\%} of households --- even though its productivity (and wage) is \emph{lowest}.
-  \item \textbf{Something keeps people in \texttt{loc3}} that the $\alpha = 0$ model does not see: an "amenity," a non-pecuniary preference for \texttt{loc3}. The shifter $\alpha_3$ will quantify it.
-\end{itemize}
-
+  Our strategy is then to update each $\alpha_j$ according to the log-share gap $\log s_j^{\text{data}} - \log s_j^{\text{model}}$.
 \end{frame}
 
-\begin{frame}{The static intuition}
+\begin{frame}{Empirical Targeted Moments}
+  \textbf{Empirical Targeted Moments} (population shares):
+  \[
+  s^{\text{data}} = (0.30,\ 0.30,\ 0.40).
+  \]
 
-In a \textbf{static} multinomial logit with deterministic-part utilities $\delta_j$:
-\[
-s_j = \frac{\exp(\delta_j / \eta)}{\sum_k \exp(\delta_k / \eta)}.
-\]
-
-\textbf{Take log differences:}
-\[
-\log s_j - \log s_{j'} = \frac{\delta_j - \delta_{j'}}{\eta}.
-\]
-
-If $\delta_j$ contains $\alpha_j$ additively, we recover $\alpha_j - \alpha_{j'}$ directly from observed log-share differences.
-
+  \begin{itemize}
+    \item In the data, \emph{40\%} of households live in location 3, even though its wage is \emph{lowest}.
+    \item We posit there is an \textbf{unexplained/unobserved portion} of people's desire to live in location 3.
+    \item We call this $\alpha_3$: the \textbf{amenity} of location 3.
+  \end{itemize}
 \end{frame}
 
-\begin{frame}{A damped log-share update}
-
-The static formula motivates a damped update on $\alpha$:
-\[
-\alpha_j^{(k+1)} = \alpha_j^{(k)} + s \cdot \eta \cdot \bigl( \log s_j^{\text{data}} - \log s_j^{\text{model}, (k)} \bigr),
-\]
-with update speed $s \in (0, 1]$. In our \emph{dynamic} model, $V$ also depends on $\alpha$, so this is not an exact inversion --- but it remains an empirically conservative fixed-point iteration with geometric convergence.
-
-\end{frame}
-
-\begin{frame}{Why this is "indirect"}
-
-\begin{itemize}
-  \item \textbf{Direct inference:} read off the parameter from the data. We can't --- we don't observe $\alpha_j$ in any data set.
-  \item \textbf{Indirect inference (broad sense):} use the \emph{model} as a translator: observe shares (which we have) and back out $\alpha$ (which we don't) by matching.
-  \item \textbf{Note.} Strict Gourieroux--Monfort--Renault (1993) uses an auxiliary model. Macro talk uses the term more loosely; we follow the loose usage.
-\end{itemize}
-
-\end{frame}
-
-\begin{frame}{The calibration loop}
-
-\begin{enumerate}
-  \item Initialize $\alpha^{(0)} = 0$.
-  \item \textbf{Solve the household} at $\alpha^{(k)}$. Get $s^{\text{model}, (k)}$.
-  \item Compute gap $g_j = \log s_j^{\text{data}} - \log s_j^{\text{model}, (k)}$.
-  \item If $\| g \|_\infty < \text{tol}$, \textbf{stop}.
-  \item Update $\alpha^{(k+1)} = \alpha^{(k)} + s \cdot \eta \cdot g$, normalize $\alpha_1 = 0$.
-  \item Repeat.
-\end{enumerate}
-
-\end{frame}
-
-\begin{frame}[fragile]{In code}
-\begin{lstlisting}
-function calibrate_shifters!(hh, p, s_data; verbosity=1)
-    update_speed = 0.1;  tol = 5e-3;  maxiter = 60
-    α = Float64[0.0, p.α_init[1], p.α_init[2]];  V, Λ = nothing, nothing
-    for k in 1:maxiter
-        out = solve_household(hh, p, α; V_init=V, Λ_init=Λ);  (;V, Λ) = out
-        gap = log.(s_data) .- log.(max.(out.shares, 1e-8))
-        maximum(abs.(gap)) < tol && return (; α, k, out...)
-        α .+= update_speed * p.η_logit .* gap;   α .-= α[1]   # update + normalize
-    end
-end
-\end{lstlisting}
-
-\end{frame}
-
-\begin{frame}{Running it}
-
-\textbf{Iteration log} (selected, $s = 0.1$):
-
-\begin{itemize}
-  \item Iter 1: shares (0.387, 0.365, 0.248); $\alpha = 0$.
-  \item Iter 8: shares (0.327, 0.329, 0.343); $\alpha = (0, 0.024, 0.504)$.
-  \item Iter 16: shares (0.306, 0.311, 0.383); $\alpha = (0, 0.010, 0.678)$.
-  \item Iter 32: shares (0.300, 0.301, 0.398); $\alpha = (0, -0.011, 0.737)$. \textbf{Done.}
-\end{itemize}
-
-\vspace{0.4em}
-
-Converges in 32 iterations. Geometric convergence in the log-share gap.
-
-\end{frame}
-
-\begin{frame}{Reading the calibrated $\alpha$}
-
-\begin{itemize}
-  \item $\alpha_1 = 0$ (normalized).
-  \item $\alpha_2 \approx -0.011$: \texttt{loc2}'s 30\% share is consistent with the wage-only model.
-  \item $\alpha_3 \approx 0.737$: \texttt{loc3} has $\approx 0.74$ utility per period of unobserved amenity.
-\end{itemize}
-
-\vspace{0.3em}
-
-$\alpha_3 \approx 0.74$ is the kind of inference indirect identification gives us: a value for a quantity we cannot directly see.
-
-\end{frame}
-
-\begin{frame}{What if data shares were different?}
-
-\textbf{Comparative static of identification.}
-
-\vspace{0.3em}
-
-\begin{itemize}
-  \item If $s_3^{\text{data}}$ rose from 0.40 to 0.45, $\alpha_3$ would rise to keep the model honest.
-  \item If $s_3^{\text{data}}$ fell to 0.20 (less than the wage-only prediction), $\alpha_3$ would go \emph{negative} --- a \emph{dis}amenity that the wage model fails to capture.
-\end{itemize}
-
-\vspace{0.3em}
-
-The inferred $\alpha$ \textbf{tracks the data}, not the model's preferences. That's what makes it a useful empirical object.
-
+\begin{frame}{Calibration Outer Loop}
+  \begin{enumerate}
+    \item Initialize $\alpha^{(0)} = 0$.
+    \item \textbf{Solve the household} at $\alpha^{(k)}$. Get $s^{\text{model}, (k)}$.
+    \item Compute gap $g_j = \log s_j^{\text{data}} - \log s_j^{\text{model}, (k)}$.
+    \item If $\| g \|_\infty < \text{tol}$, \textbf{stop}.
+    \item Update $\alpha^{(k+1)} = \alpha^{(k)} + \texttt{update\_speed} \cdot \eta \cdot g$, normalize $\alpha_1 = 0$.
+    \item Repeat.
+  \end{enumerate}
 \end{frame}
 
 % =============================================================
 \section[Extensions]{Extensions}
 % =============================================================
 
-\begin{frame}{What our model assumed}
+\begin{frame}{This Version}
+  \begin{enumerate}
+    \item One consumption good.
+    \item Perfect substitutability of goods across locations.
+    \item Costless trade in that good.
+    \item Free capital flow (one $r$).
+  \end{enumerate}
 
-We assumed:
-\begin{enumerate}
-  \item \textbf{One good}, perfectly substitutable across locations.
-  \item \textbf{Costless trade} in that good.
-  \item \textbf{Free capital} flow (one $r$).
-  \item \textbf{Free labor} flow (subject to migration cost).
-\end{enumerate}
-
-\vspace{0.4em}
-
-These are strong. Spatial economics tracks what changes when each is relaxed.
-
-\textbf{No code today --- just the headline.}
-
+  There are many ways you could enrich this.
 \end{frame}
 
-\begin{frame}{Variation 1: differentiated goods (Armington)}
-
-Each location's good is a \emph{distinct variety}; consumers love variety (CES aggregator).
-
-\vspace{0.4em}
-
-\begin{itemize}
-  \item Trade flows from variety demand.
-  \item Local prices $p_j$ differ; real wages depend on the local price index.
-  \item Migration responds to \emph{real} wages.
-\end{itemize}
-
-\vspace{0.3em}
-
-This is the \textbf{Armington (1969)} structure underlying modern trade / spatial economics (Eaton--Kortum, Allen--Arkolakis).
-
+\begin{frame}{Differentiated Goods (Armington)}
+  Each location's good is a \emph{distinct variety}; consumers love variety (CES aggregator).
+  \begin{itemize}
+    \item Trade flows from variety demand.
+    \item Local prices $p_j$ differ; real wages depend on the local price index.
+    \item Migration responds to \emph{real} wages.
+  \end{itemize}
+  This is the \textbf{Armington (1969)} foundation of much of modern trade / spatial economics.
 \end{frame}
 
-\begin{frame}{Variation 2: trade costs}
-
-Goods don't cross borders for free: \textbf{iceberg cost} $\tau_{ij} \geq 1$ (you must ship $\tau_{ij}$ units for 1 to arrive).
-
-\vspace{0.4em}
-
-\begin{itemize}
-  \item Local prices depend on distance.
-  \item Some goods become non-tradable ($\tau \to \infty$): services, housing.
-  \item Households consume a mix of tradables and non-tradables.
-  \item Migration costs and trade costs interact (closer regions tend to share both).
-\end{itemize}
-
+\begin{frame}{Trade Costs}
+  Models goods transportation as costly. \textbf{Iceberg costs} $\tau_{ij} \geq 1$ imply you must ship $\tau_{ij}$ units for each 1 to arrive.
+  \begin{itemize}
+    \item Local prices depend on distance.
+    \item Some goods become non-tradable ($\tau \to \infty$): services, housing.
+    \item Households consume a mix of tradables and non-tradables.
+    \item Migration costs and trade costs interact (closer regions tend to share both).
+  \end{itemize}
 \end{frame}
 
-\begin{frame}{Variation 3: restricted factor mobility}
-
-\begin{itemize}
-  \item \textbf{Capital is local} (e.g.\ housing). Local capital scarcity raises local rental rates and house prices.
-  \item \textbf{Migration cost is sunk and large.} Workers don't equalize wages quickly; spatial wage differentials persist.
-  \item \textbf{Skill heterogeneity.} High- and low-skill workers face different migration choices --- as in modern urban literature (Diamond 2016, Moretti 2011).
-\end{itemize}
-
+\begin{frame}{Restricted Factor Mobility}
+  \begin{itemize}
+    \item \textbf{Capital is local} (e.g.\ housing). Local capital scarcity raises local rental rates and house prices.
+    \item \textbf{Migration cost is sunk and large.} Workers don't equalize wages quickly; spatial wage differentials persist.
+    \item \textbf{Skill heterogeneity.} High- and low-skill workers face different migration choices --- as in modern urban literature (Diamond 2016, Moretti 2011).
+  \end{itemize}
 \end{frame}
 
-\begin{frame}{Putting the pieces back}
-
-Each variation slots into the chain as a \emph{stage} or a \emph{block-level extension}:
-
-\vspace{0.3em}
-
-\begin{itemize}
-  \item Armington / non-tradables $\Rightarrow$ \emph{change} the env (add $p_j$, real wages).
-  \item Local housing $\Rightarrow$ \emph{add an axis} (housing) and a stage.
-  \item Skill heterogeneity $\Rightarrow$ \emph{add an axis} (skill) and stage closures keyed on it.
-\end{itemize}
-
+\begin{frame}{Implementing Extensions}
+  \begin{itemize}
+    \item Armington / non-tradables: Additional equations determining the prices in \texttt{env} (outer loop / DAG).
+    \item Homeownership: Add housing idiosyncratic state variable (axis) and housing buy/sell stages.
+    \item Skill heterogeneity (as in Aiyagari): Add idiosyncratic human capital $z$ state variable (axis) and stage.
+  \end{itemize}
 \end{frame}
 
 \end{document}

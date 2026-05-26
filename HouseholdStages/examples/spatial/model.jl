@@ -84,7 +84,7 @@ function spatial_household(p = params)
         location_axis  = :location,
         migration_cost = [0.0           p.migration_cost;
                           p.migration_cost 0.0],
-        ε              = Param(p.ε_logit),
+        ε              = p.ε_logit,
     )
     receipt = WealthChangeStage(layout;
         wealth_post = function (cell; env)

@@ -61,8 +61,7 @@ BuyHome = GatedLogitChoice(layout;
     flow_payoff     = (cell, h_choice; env) -> 0.0,  # no explicit u(buy)
     next_state_idx  = (cell, h_choice) -> h_choice,
     available       = (cell; env) -> cell.h == h_grid[1],  # renters only
-    ε               = Param(1.0 / params.ξ),
-    closure_deps    = (...),
+    ε               = 1.0 / params.ξ,        # or FromEnv(:ξ_logit)
 )
 ```
 

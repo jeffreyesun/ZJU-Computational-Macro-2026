@@ -94,8 +94,8 @@
 % =============================================================
 
 \begin{frame}{Same As Last Time}
-  
-  The three-Stage household block from last time::
+
+  The three-Stage household block from last time:
   \begin{enumerate}
     \item Income shock (Markov on $z$).
     \item Income (cash-on-hand $b = R\,b^{\mathrm{end}} + z$).
@@ -112,16 +112,16 @@
 
 \begin{frame}[fragile]{Solve the household block at a given $R$}
   \begin{lstlisting}
-  function solve_aiyagari_steady_state(env; verbosity=1)
-      V_end = solve_vfi(env; verbosity)
-      return (; V_end, λ = find_steady_state_population(V_end, env; verbosity))
+  function solve_aiyagari_steady_state(params; verbosity=1)
+      V_end = solve_vfi(params; verbosity)
+      return (;V_end, λ=find_steady_state_population(V_end, params; verbosity))
   end
   \end{lstlisting}
 
   \begin{itemize}
-    \item env contains prices and parameters.
+    \item \texttt{params} contains prices and parameters.
     \item In one function call, solve for steady state.
-    \item Can think of as, among other things, one big function $R \mapsto \bar K$.
+    \item Can think of as, among other things, one big function $R \mapsto \bar C - Y$ (excess goods demand at given prices).
   \end{itemize}
 \end{frame}
 
@@ -133,7 +133,7 @@
   Every aggregate moment is a \textbf{dual vector}: an inner product with $\lambda^\star$.
   \begin{align*}
     \bar K &= \sum_{i,j} b_i \, \lambda^\star_{ij} \\
-    \bar L &= \sum_{i,j} \lambda^\star_{ij}        \\
+    \bar L &= \sum_{i,j} z_j \, \lambda^\star_{ij}        \\
     \bar C &= \sum_{i,j} c^\star_{ij} \, \lambda^\star_{ij} \\
     \bar V &= \sum_{i,j} V_{ij} \, \lambda^\star_{ij}
   \end{align*}
@@ -143,17 +143,17 @@
   \begin{lstlisting}
   function compute_household_aggregates(;param_vals...)
       params = get_params(;param_vals...)
-      (V_end, λ) = solve_aiyagari_steady_state(params)
+      (;V_end, λ) = solve_aiyagari_steady_state(params)
 
-      b_grid_policy = policy_function(V_end, params)
-      c_policy = get_c_policy(params.b_grid, b_grid_policy)
+      b_inds_new = policy_function(V_end, params)
+      c_policy = params.b_grid .- params.b_grid[b_inds_new]
 
-      L_agg = sum( λ)
+      L_agg = sum(params.z_grid' .* λ)
       K_agg = sum(params.b_grid .* λ)
       V_agg = sum(V_end .* λ)
       C_agg = sum(c_policy .* λ)
 
-      return (; V_end, λ, L_agg, K_agg, V_agg, C_agg)
+      return (;V_end, λ, L_agg, K_agg, V_agg, C_agg)
   end
   \end{lstlisting}
 \end{frame}
@@ -171,7 +171,7 @@
 
   In code,
   \begin{lstlisting}
-  compute_Y(K, L; α = 1/3) = K^ α * L^ (1 - α)
+  compute_Y(K, L; α=1/3) = K^α * L^(1-α)
   \end{lstlisting}
 \end{frame}
 
@@ -195,9 +195,9 @@
   We can code up this function,
   \begin{lstlisting}
   function compute_excess_demand(R)
-      res = compute_household_aggregates(;R)
-      Y_agg = compute_Y(res.K_agg, res.L_agg)
-      return excess_demand = (res.C_agg - Y_agg)/Y_agg
+      (;K_agg, L_agg, C_agg) = compute_household_aggregates(;R)
+      Y_agg = compute_Y(K_agg, L_agg)
+      return excess_demand = (C_agg - Y_agg)/Y_agg
   end
   \end{lstlisting}
   The chain of direct effects is:
@@ -209,14 +209,14 @@
 \begin{frame}[fragile]{Solving for equilibrium $R$}
   \begin{lstlisting}
   tol = 0.01
-  lr = 0.001
+  update_speed = 0.001
 
   R = 1.01
   err = Inf
   while err > tol
       excess_demand = compute_excess_demand(R)
 
-      R_new = R - excess_demand*lr
+      R_new = R + excess_demand*update_speed
       err = abs(excess_demand)
 
       R = R_new

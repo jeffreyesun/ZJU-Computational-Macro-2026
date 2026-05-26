@@ -39,7 +39,7 @@ function spatial_household(p = params)
         location_axis  = :location,
         migration_cost = [0.0              p.migration_cost;
                           p.migration_cost 0.0],
-        ε              = Param(p.ε_logit),
+        ε              = p.ε_logit,
     )
     receipt = WealthChangeStage(layout;
         wealth_post = function (cell; env)
@@ -76,7 +76,7 @@ end
 MigrationStage(layout;
     location_axis  = :location,
     migration_cost = [0.0 0.5; 0.5 0.0],   # (n_loc, n_loc), origin → destination
-    ε              = Param(5.0),            # Gumbel scale
+    ε              = 5.0,                   # Gumbel scale (or FromEnv(:key))
 )
 ```
 
@@ -90,8 +90,7 @@ taste-shock scale; the kernel computes
 
 and backward yields the log-sum-exp value at each cell. The cost
 matrix is stored on the Spec; the per-destination amenity field
-(optional, see the Migration stage's docstring) is left at its
-default `nothing` here. No user closure for the cost; shape is
+(optional) defaults to a zero vector here. No user closure for the cost; shape is
 checked at construction; the cost matrix flows through `with_eltype`
 as shared static data for ForwardDiff lifts.
 

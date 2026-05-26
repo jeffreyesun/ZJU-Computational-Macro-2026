@@ -1,79 +1,47 @@
-"""
-    AbstractStageSpec
+###################
+# Stage protocol #
+###################
+#
+# Three layers. A `Spec` is pure stage-specific configuration
+# (immutable, no buffers, no layout). A `Buffer` is per-call state —
+# the materialised K-operator data, internal scratch, the V/Λ
+# output arrays, the layouts the buffer was allocated against, and
+# a freshness cache. A `Stage` bundles one of each and is the
+# user-facing object.
+#
+# Specs are layout-free under the 2026-05-25 refactor: layouts
+# flow into `allocate(spec, layout, T)` and end up on the buffer.
+# A user-authored stage defines its Spec, optionally a `Kernel`
+# and/or `Scratch` struct, `allocate_kernel`, `backward!`,
+# `forward!`, and emits a wrapper struct via `@definestage`.
 
-The configuration layer of a stage: pure data describing what the
-stage *is* (transition matrix, axis, layout, closures, `Param`-typed
-hyperparameters). A Spec is immutable — except, for chains, the
-moments slot, which is intentionally a `Dict` so `define_moment!` can
-extend it.
-
-Specs are internal types. Users see only the bundled
-[`AbstractStage`](@ref). Each concrete stage class defines an
-`<X>StageSpec` whose fields hold whatever the K-operator needs.
-"""
+"Pure stage configuration. Layout-free; one struct per stage class."
 abstract type AbstractStageSpec end
 
-"""
-    AbstractStageBuffer
-
-The per-call state layer of a stage: the runtime data
-`backward!` produces and `forward!` consumes. A Buffer holds
-
-  * `kernel`  — the materialised K-operator data (`nothing` when K is
-    config-only, e.g. Markov), populated by `backward!`.
-  * `scratch` — any internal workspace that carries no morphism
-    content (permuted-axis arrays, materialised cells, etc.).
-  * `V_start` and `Λ_end` — the layout-shaped output buffers for
-    backward and forward respectively.
-  * `cache` — a [`CacheState`](@ref) tracking the most recent
-    `(V_end, env)` seen by `backward!`, so that a later `forward!`
-    can check whether its kernel is still valid.
-
-Buffers are *fresh* on every `allocate(spec)` call. They are not
-shared across different uses of the same Spec — in particular,
-per-period buffers in a transition path are distinct Buffer
-instances sharing one Spec.
-
-A Buffer's `cache` field is its only mutable part.
-"""
+"Per-call buffer: kernel + scratch + V/Λ outputs + layouts + cache."
 abstract type AbstractStageBuffer end
 
-"""
-    AbstractStage
-
-The user-facing layer: a bundle of one [`AbstractStageSpec`](@ref)
-and one [`AbstractStageBuffer`](@ref). Construct a `MarkovStage`,
-`ArgmaxStage`, etc.; compose under `∘` and `×`; pass to
-`backward!` / `forward!` / `solve_steady_state_given_env!` /
-`solve_transition_given_env_path!`.
-
-The legacy supertype name. The Spec/Buffer separation lives below;
-this is the only level users see.
-"""
+"Bundle of one Spec and one Buffer; the user-facing layer."
 abstract type AbstractStage end
 
-"""CLAUDE
-Mutable cache fingerprint for a stage Buffer. Tracks the `(V_end,
-env)` last seen by `backward!` so that a later `forward!` can decide
-whether its kernel is still valid.
+# Cache fingerprint #
+#-------------------#
 
-`last_V_hash` is the full-array hash of V_end (catches in-place
-mutation that pointer-equality would miss). `last_env` is the last
-env NamedTuple, compared via `isequal`. `kernel_valid` is `true`
-after a successful `backward!` and `false` after explicit
-[`invalidate!`](@ref).
+"""
+Mutable record of the `(V_end, env)` last seen by `backward!`. A
+later `forward!` can check whether its kernel is still valid for
+the `(V_end, env)` it's being given.
 """
 mutable struct CacheState
     last_V_hash  :: UInt
-    last_env     :: Any            # NamedTuple or nothing
+    last_env     :: Any
     kernel_valid :: Bool
 end
 CacheState() = CacheState(zero(UInt), nothing, false)
 
-"""CLAUDE
-Stamp the buffer's cache with the `(V_end, env)` pair backward just
-consumed. Call from concrete-stage `backward!` implementations
-*after* the kernel has been populated.
+"""
+Stamp the buffer's cache with the `(V_end, env)` `backward!` just
+consumed. Call at the end of every concrete `backward!`.
 """
 function _seat_cache!(buffer::AbstractStageBuffer, V_end, env)
     c = buffer.cache
@@ -83,264 +51,273 @@ function _seat_cache!(buffer::AbstractStageBuffer, V_end, env)
     return buffer
 end
 
-"""
-    invalidate!(buffer_or_stage) -> buffer_or_stage
-
-Mark the cache as stale. The next cache-checking `forward!` will
-either error (default) or re-seat (if `reseat_if_stale=true`).
-
-Useful for outer-loop drivers that mutate the chain's state in ways
-the cache can't detect (e.g., a future eltype-switch lift). The
-helpers `solve_steady_state_given_env!`/`solve_transition_given_env_path!` don't
-need this —
-their backward/forward calls see the same `(V_end, env)` by
-construction.
-"""
+"Mark the cache stale; the next cache-checking `forward!` will refuse to run trusted."
 function invalidate!(buffer::AbstractStageBuffer)
     buffer.cache.kernel_valid = false
     return buffer
 end
 invalidate!(stage::AbstractStage) = (invalidate!(stage.buffer); stage)
 
-"""
-    allocate(spec, T = spec.element_type) -> Buffer
+# Generic buffer #
+#----------------#
 
-Build a fresh per-call buffer for `spec`. Each concrete `<X>StageSpec`
-implements its own method; the generic fallback raises. `T` is the
-buffer eltype; defaults to the Spec's `element_type` field
-(`Float64` for most stages).
-
-Users typically don't call `allocate` directly — `<X>Stage(...)`
-calls it on construction. `allocate(spec)` is exposed for lift
-authors who rebuild buffers under a different eltype (`with_eltype`).
 """
-function allocate(spec::AbstractStageSpec, ::Type{T} = Float64) where {T}
-    error("allocate not implemented for $(typeof(spec))")
+The library-provided buffer shape. Per-stage Buffer structs from
+the pre-2026-05-25 era are replaced by this; `Kernel` and `Scratch`
+are free type parameters so each stage chooses its own.
+"""
+struct StageBuffer{Kernel, Scratch, V<:AbstractArray, Λ<:AbstractArray,
+                   LIn, LOut} <: AbstractStageBuffer
+    kernel        :: Kernel
+    scratch       :: Scratch
+    V_start       :: V
+    Λ_end         :: Λ
+    input_layout  :: LIn
+    output_layout :: LOut
+    cache         :: CacheState
 end
 
-# Bundled-stage delegate: build a fresh buffer at the stage's eltype.
-allocate(stage::AbstractStage, ::Type{T} = Float64) where {T} =
-    allocate(stage.spec, T)
+# Allocation protocol #
+#---------------------#
+
+"User overrides this to allocate the kernel cache. Default: `nothing`."
+allocate_kernel(::AbstractStageSpec, ::Type, ::StateLayout) = nothing
+
+"User overrides this to allocate compute scratch. Default: `nothing`."
+allocate_scratch(::AbstractStageSpec, ::Type, ::StateLayout) = nothing
+
+"Input layout the spec sees. Default: the layout passed in. Override for stages whose input layout differs structurally."
+input_layout(::AbstractStageSpec, layout::StateLayout) = layout
+
+"Output layout the spec produces. Default: same as input. `ForgetfulSumStage` overrides to drop the named axis."
+output_layout(::AbstractStageSpec, layout::StateLayout) = layout
+
+"Default buffer eltype. Override for specs that infer T from a parameter or array field."
+default_eltype(::AbstractStageSpec) = Float64
 
 """
-    backward!(spec, V_end, env, buffer) -> V_start
-    backward!(stage, V_end, env)        -> V_start
-
-Backward pass: given the value function at the *end* of the stage,
-the runtime `env`, and a Buffer, populate `buffer.kernel` and
-`buffer.V_start` and return the latter. Also stamps the buffer's
-cache (`_seat_cache!`) so a later `forward!` can verify freshness.
-
-The Spec-keyed signature is the primary implementation; the
-bundled-stage delegate is a one-liner.
+Allocate a fresh `StageBuffer` for `spec` against `layout`. The
+optional `V_start` / `Λ_end` kwargs are library-internal — used by
+`ProductStage` for view-stitching into a fused tensor; user-facing
+constructors never expose them.
 """
-function backward!(spec::AbstractStageSpec, V_end, env, buffer)
-    error("backward! not implemented for $(typeof(spec))")
+function allocate(spec::AbstractStageSpec, layout::StateLayout,
+                  ::Type{T} = default_eltype(spec);
+                  V_start=nothing, Λ_end=nothing) where {T}
+    L_in  = input_layout(spec, layout)
+    L_out = output_layout(spec, layout)
+    Vs = @something V_start zeros(T, layout_size(L_in))
+    Λe = @something Λ_end   zeros(T, layout_size(L_out))
+    kernel  = allocate_kernel(spec, T, layout)
+    scratch = allocate_scratch(spec, T, layout)
+    return StageBuffer(kernel, scratch, Vs, Λe, L_in, L_out, CacheState())
 end
 
+# Stage-keyed delegates — buffer-first dispatch on the spec-keyed methods #
+#------------------------------------------------------------------------#
+
+"`backward!(stage, V_end, env) -> V_start`. Bundled-stage delegate."
 backward!(stage::AbstractStage, V_end, env) =
-    backward!(stage.spec, V_end, env, stage.buffer)
+    backward!(stage.buffer, stage.spec, V_end, env)
 
-"""
-    forward!(spec,  Λ_start, buffer)                       -> Λ_end
-    forward!(stage, Λ_start)                               -> Λ_end
-    forward!(stage, Λ_start, V_end, env; kwargs...)        -> Λ_end
-
-Forward pass: consume `Λ_start` and the kernel data populated by
-the most recent `backward!`, produce `Λ_end`.
-
-The three-arg `forward!(spec, Λ_start, buffer)` is the trusted path
-— no checks. The two-arg `forward!(stage, Λ_start)` is its
-bundled-stage sugar.
-
-The four-arg `forward!(stage, Λ_start, V_end, env; kwargs...)` does
-a cache check: if `buffer.cache` agrees with `(V_end, env)` it runs
-trusted; on a mismatch it either errors (default,
-`reseat_if_stale=false`) or re-runs `backward!` first
-(`reseat_if_stale=true`). `check=false` skips the check entirely
-(power-user opt-out).
-"""
-function forward!(spec::AbstractStageSpec, Λ_start, buffer)
-    error("forward! not implemented for $(typeof(spec))")
-end
-
+"`forward!(stage, Λ_start) -> Λ_end`. Bundled-stage delegate."
 forward!(stage::AbstractStage, Λ_start) =
-    forward!(stage.spec, Λ_start, stage.buffer)
+    forward!(stage.buffer, stage.spec, Λ_start)
 
+"""
+    forward!(stage, Λ_start, V_end, env; check=true, reseat_if_stale=false) -> Λ_end
+
+Cache-checking variant: refuses to run trusted unless the buffer's
+cache agrees with `(V_end, env)`. With `reseat_if_stale=true`,
+re-runs `backward!` to refresh; otherwise errors. `check=false`
+skips the check (power-user opt-out).
+"""
 function forward!(stage::AbstractStage, Λ_start, V_end, env;
-                  reseat_if_stale::Bool = false,
-                  check::Bool           = true)
+                  reseat_if_stale::Bool=false, check::Bool=true)
     if check
         c = stage.buffer.cache
-        fresh = c.kernel_valid &&
-                hash(V_end) == c.last_V_hash &&
+        fresh = c.kernel_valid && hash(V_end) == c.last_V_hash &&
                 isequal(env, c.last_env)
         if !fresh
-            if reseat_if_stale
-                backward!(stage, V_end, env)   # re-seat
-            else
-                error("forward!: cached kernel is stale for this (V_end, env). " *
-                      "Pass `reseat_if_stale=true` to recompute the kernel, " *
-                      "or call `backward!` first. To skip the check entirely " *
-                      "(use only when the kernel is known fresh), pass `check=false`.")
-            end
+            reseat_if_stale || error("forward!: cached kernel is stale for this (V_end, env). " *
+                                     "Pass reseat_if_stale=true or call backward! first.")
+            backward!(stage, V_end, env)
         end
     end
     return forward!(stage, Λ_start)
 end
 
-"""CLAUDE
-Helper for symmetric-layout stages: allocate `V_start` and `Λ_end`
-buffers of the same shape and eltype. Returns the pair
-destructurable as `(; Vs, Λe)`.
-"""
-function _alloc_VΛ(layout::StateLayout, ::Type{T}) where {T}
-    dims = layout_size(layout)
-    Vs   = zeros(T, dims)
-    Λe   = zeros(T, dims)
-    return (; Vs, Λe)
-end
+# Public accessors #
+#------------------#
 
-"""CLAUDE
-Variant of `_alloc_VΛ` that accepts optional pre-allocated buffers
-(used by `ProductStage` when stitching components into a fused
-tensor as views). Returns `(; Vs, Λe)`. No type-equality assertion:
-the product fallback for asymmetric-layout components can pass a
-SubArray V_start and `nothing` for Λ_end, which becomes a fresh
-Array — downstream `backward!`/`forward!` handle the heterogeneity
-via dispatch.
-"""
-function _alloc_VΛ(layout::StateLayout, ::Type{T}, V_start, Λ_end) where {T}
-    dims = layout_size(layout)
-    Vs   = @something V_start zeros(T, dims)
-    Λe   = @something Λ_end   zeros(T, dims)
-    return (; Vs, Λe)
-end
+"`input_layout(stage)` — the layout the stage's buffer was allocated against."
+input_layout(stage::AbstractStage)  = stage.buffer.input_layout
+output_layout(stage::AbstractStage) = stage.buffer.output_layout
 
-# Buffer-accessor compatibility shims #
-#-------------------------------------#
-
-"""
-    V_start_buffer(stage_or_spec_with_buffer) -> AbstractArray
-    Λ_end_buffer(stage_or_spec_with_buffer)   -> AbstractArray
-
-Read the layout-shaped output buffer. The Spec layer doesn't have
-buffers; the bundled Stage does (`stage.buffer.V_start`). These
-helpers exist for sequence-space and lift code that pre-dates the
-refactor and benefits from explicit names.
-"""
+"Read the layout-shaped output buffers."
 V_start_buffer(stage::AbstractStage) = stage.buffer.V_start
 Λ_end_buffer(stage::AbstractStage)   = stage.buffer.Λ_end
+
+# `@definestage` — wrapper struct + constructors + bundle #
+#---------------------------------------------------------#
+
+"""
+Stamp out the per-stage wrapper struct, outer constructors, and
+`bundle` method. Usage:
+
+```julia
+@definestage ArgmaxStage ArgmaxStageSpec kernel=ArgmaxKernel
+@definestage MarkovStage MarkovStageSpec scratch=MarkovScratch
+@definestage IdentityStage IdentityStageSpec
+```
+
+`kernel=K` tightens the Buffer constraint to `StageBuffer{<:K}`;
+`scratch=S` tightens the Scratch parameter. Both default to
+unconstrained.
+"""
+macro definestage(stage_name, spec_name, opts...)
+    kernel_type = :Any
+    scratch_type = :Any
+    for opt in opts
+        @assert opt isa Expr && opt.head === :(=) "@definestage: expected key=Value, got $opt"
+        key, val = opt.args
+        if key === :kernel
+            kernel_type = val
+        elseif key === :scratch
+            scratch_type = val
+        else
+            error("@definestage: unknown option $key")
+        end
+    end
+    buf_constraint = :(StageBuffer{<:$(esc(kernel_type)), <:$(esc(scratch_type))})
+    spec_e = esc(spec_name)
+    stg_e  = esc(stage_name)
+    bundle_e = esc(:bundle)
+    return quote
+        struct $stg_e{Spec<:$spec_e, Buffer<:$buf_constraint} <: AbstractStage
+            spec   :: Spec
+            buffer :: Buffer
+        end
+        $stg_e(spec::$spec_e, layout::StateLayout, ::Type{T}=default_eltype(spec)) where {T} =
+            $stg_e(spec, allocate(spec, layout, T))
+        $stg_e(layout::StateLayout; kwargs...) =
+            $stg_e($spec_e(; kwargs...), layout)
+        $bundle_e(spec::$spec_e, layout::StateLayout) = $stg_e(spec, layout)
+        $bundle_e(spec::$spec_e, layout::StateLayout, ::Type{T}) where {T} =
+            $stg_e(spec, layout, T)
+    end
+end
+
+# `bundle(spec, layout)` — generic fallback raises until @definestage emits the method.
+function bundle(spec::AbstractStageSpec, ::StateLayout)
+    error("bundle not implemented for $(typeof(spec))")
+end
 
 # Dependency machinery #
 #----------------------#
 
-"""
-    static_env_deps(::Type{<:AbstractStageSpec}) -> NamedTuple
-
-The `env` fields the *Spec type* itself reads, regardless of user
-closures. Concrete spec types override; default is `NamedTuple()`.
-"""
+"The `env` fields the Spec type itself reads. Concrete specs override."
 static_env_deps(::Type{<:AbstractStageSpec}) = NamedTuple()
 
-"""
-    effective_env_slice(spec_or_stage) -> NTuple{N, Symbol}
-
-Names of `env` fields read by this stage. Union of
-`static_env_deps(typeof(spec))` and any swept `Param` keys on the
-Spec's fields. Closure-borne env reads are not introspected; they
-surface as `getproperty` errors at the first backward/forward call.
-"""
+"Names of `env` fields read by this stage — static deps ∪ env-resolved spec fields."
 function effective_env_slice(spec::AbstractStageSpec)
     static = keys(static_env_deps(typeof(spec)))
-    swept  = _swept_param_keys(spec)
-    return Tuple(unique((static..., swept...)))
+    return Tuple(unique((static..., _env_field_names(spec)...)))
 end
-
 effective_env_slice(stage::AbstractStage) = effective_env_slice(stage.spec)
 
-# Walk runtime Spec fields looking for swept Params. Called once at
-# chain construction, not in hot paths.
-function _swept_param_keys(spec::AbstractStageSpec)
+"""
+Marker wrapping a Symbol that names an `env` field. Spec fields hold
+either a literal value or a `FromEnv(:key)`; `resolve` dispatches on
+the value's type.
+"""
+struct FromEnv
+    key :: Symbol
+end
+
+"Resolve a stage-parameter field: pass through if literal, look up in `env` if `FromEnv`."
+resolve(val, env)            = val
+resolve(fe::FromEnv, env)    = env[fe.key]
+# Pass-through when env is absent — lets `resolve(buffer, spec)` work
+# even with FromEnv fields the caller won't destructure.
+resolve(fe::FromEnv, ::Nothing) = fe
+
+"Names of `env` fields the spec currently reads — the `FromEnv` markers held in any field."
+function _env_field_names(spec::AbstractStageSpec)
     syms = Symbol[]
     for fn in fieldnames(typeof(spec))
-        f = getfield(spec, fn)
-        if f isa Param && is_swept(f)
-            push!(syms, swept_key(f)::Symbol)
-        end
+        v = getfield(spec, fn)
+        v isa FromEnv && push!(syms, v.key)
     end
     return Tuple(syms)
 end
 
 """
-    validate_env(spec_or_stage, env::NamedTuple) -> Nothing
-
-Check that `env` provides every field in
-`effective_env_slice(spec_or_stage)`. Throws an informative error
-listing the missing keys; returns `nothing` on success.
+Project a spec's fields (env-resolved via `resolve`) and the buffer's
+layout/output geometry into a single NamedTuple. The destructure target
+for `backward!` / `forward!` heads. Geometry wins on any name clash.
 """
-function validate_env(spec::AbstractStageSpec, env)
-    needed = effective_env_slice(spec)
-    missing_keys = Symbol[]
-    for k in needed
-        haskey(env, k) || push!(missing_keys, k)
-    end
-    isempty(missing_keys) ||
-        error("env is missing required fields: $(missing_keys); provided keys: $(keys(env))")
-    return nothing
+function resolve(buffer::AbstractStageBuffer, spec::AbstractStageSpec, env=nothing)
+    spec_nt = NamedTuple{fieldnames(typeof(spec))}(
+        ntuple(i -> resolve(getfield(spec, i), env), nfields(spec))
+    )
+    layout = buffer.input_layout
+    geom = (input_layout  = layout,
+            output_layout = buffer.output_layout,
+            dims          = layout_size(layout),
+            V_start       = buffer.V_start,
+            Λ_end         = buffer.Λ_end)
+    return merge(spec_nt, geom)
 end
 
+"Check that `env` provides every field in `effective_env_slice(spec)`."
+function validate_env(spec::AbstractStageSpec, env)
+    needed = effective_env_slice(spec)
+    missing_keys = Symbol[k for k in needed if !haskey(env, k)]
+    isempty(missing_keys) ||
+        error("env is missing required fields: $missing_keys; provided: $(keys(env))")
+    return nothing
+end
 validate_env(stage::AbstractStage, env) = validate_env(stage.spec, env)
 
-"""
-    env_schema(spec_or_stage) -> NamedTuple
-
-A prototype NamedTuple whose field names are
-`effective_env_slice(spec)`. Values are `nothing`. Used by
-[`make_env`](@ref) to validate user-supplied env construction.
-"""
+"Prototype NamedTuple whose names are `effective_env_slice(spec)`; values `nothing`."
 function env_schema(spec::AbstractStageSpec)
     names = effective_env_slice(spec)
-    vals  = ntuple(_ -> nothing, length(names))
-    return NamedTuple{names}(vals)
+    return NamedTuple{names}(ntuple(_ -> nothing, length(names)))
 end
 env_schema(stage::AbstractStage) = env_schema(stage.spec)
 
-"""
-    make_env(spec_or_stage; kwargs...) -> NamedTuple
-
-Construct an env NamedTuple from kwargs, validated against
-`effective_env_slice(spec)`. Errors if any required field is
-missing.
-
-The construction is permissive about extra fields (they pass
-through) — closures can read whatever the user supplied — but
-strict about the required minimum.
-"""
+"Construct an env NamedTuple from kwargs, validated against `effective_env_slice(spec)`."
 function make_env(spec::AbstractStageSpec; kwargs...)
-    needed = effective_env_slice(spec)
+    needed   = effective_env_slice(spec)
     provided = keys(kwargs)
-    missing_keys = Symbol[]
-    for k in needed
-        k in provided || push!(missing_keys, k)
-    end
+    missing_keys = Symbol[k for k in needed if !(k in provided)]
     isempty(missing_keys) ||
-        error("make_env: missing required env fields: $(missing_keys); " *
-              "provided: $(collect(provided)); spec requires $(needed)")
+        error("make_env: missing required env fields: $missing_keys; provided: $(collect(provided))")
     return NamedTuple(kwargs)
 end
 make_env(stage::AbstractStage; kwargs...) = make_env(stage.spec; kwargs...)
 
-# `bundle(spec)` — construct the matching Stage from a Spec.
-# Each concrete Spec type implements its own method. The default
-# raises so misuse is caught immediately.
+# Numerical helpers #
+#-------------------#
 
 """
-    bundle(spec) -> stage
-
-Construct the bundled `<X>Stage` matching `<X>StageSpec`. Each
-concrete Spec type defines its own method.
+In-place numerically-stable softmax of `U / ε` along its trailing
+axis. Overwrites `U` with the choice probabilities and writes the
+per-row `ε · log Σ exp(U[i,:]/ε)` into `lse` (shaped like `U`'s
+leading axes). At least one entry per row must be finite.
 """
-function bundle(spec::AbstractStageSpec)
-    error("bundle not implemented for $(typeof(spec))")
+function _softmax_and_lse_along_last!(lse::AbstractArray{T},
+                                      U::AbstractArray, ε::Real) where {T}
+    Uflat   = reshape(U, :, last(size(U)))
+    lseflat = vec(lse)
+    for (s, u_row) in enumerate(eachrow(Uflat))
+        m = maximum(u_row)
+        @assert isfinite(m)
+        @. u_row = exp((u_row - m) / ε)
+        denom = sum(u_row)
+        u_row ./= denom
+        lseflat[s] = m + ε * log(denom)
+    end
+    return lse
 end

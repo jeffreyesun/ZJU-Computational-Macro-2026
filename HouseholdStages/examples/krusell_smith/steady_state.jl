@@ -6,7 +6,7 @@
 # per-K inner work is delegated to
 # `HouseholdStages.solve_steady_state_given_env!`; the outer tatonnement
 # loop is rolled here — the library leaves "close-the-model" outer
-# loops to consumers (see `PROJECT_PLAN.md` Decisions log 2026-05-18).
+# loops to consumers.
 
 include("model.jl")
 

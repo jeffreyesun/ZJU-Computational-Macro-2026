@@ -51,17 +51,6 @@ function ks_household(p = ks_params)
 end
 ```
 
-## Outer loop — tatonnement, not bisection
-
-Damped tatonnement on `K` with `K_init = 13.6`, `update_speed = 0.01`,
-`rtol = 5e-2`. The example uses tatonnement rather than bisection
-because the three-stage chain's `WealthChangeStage.backward` does not
-survive bisection's extreme-K probes: at small `K`, `r` rises past
-0.3 and the linear V-extrapolation past `w_max` amplifies V faster
-than `1 / β`, breaking the Bellman contraction. Tatonnement stays
-near the candidate K throughout, so the linear extrapolation remains
-benign.
-
 ## Calibration and result
 
 ```

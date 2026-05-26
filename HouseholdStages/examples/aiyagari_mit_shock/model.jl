@@ -108,12 +108,12 @@ end
 # TFP shock path — permanent step #
 #---------------------------------#
 
-"""CLAUDE
+"""
 Permanent TFP shock: `A[t] = A_0` for all `t = 1..T`. The new TFP level
 arrives at period 1 (unanticipated at t = 0, then anticipated forever
 after) and stays there. Returns a length-`T` vector. Defined locally
 because the library deliberately leaves transition-side utilities to
-the consumer (see `PROJECT_PLAN.md` Decisions log 2026-05-18).
+the consumer.
 """
 function tfp_path(T::Int; A_0::Float64 = 1.05)
     return fill(A_0, T)

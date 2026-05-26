@@ -1,5 +1,11 @@
 # Stage architecture — design notes
 
+A design-level companion to the package. For the protocol mechanics
+(how to *write* a stage) read `HOWTO_STAGE.md`; this document covers
+the *why* — the categorical content, the V/Λ duality, the K-operator
+framing, the trichotomy that supports transition paths and eltype
+switching.
+
 ## 1. Overview — what a stage is
 
 A **stage** is a configuration struct that, given a continuation value
@@ -34,20 +40,30 @@ inherits the same interface.
 Each concrete stage class — `MarkovStage`, `ArgmaxStage`,
 `WealthChangeStage`, … — factors into three layers:
 
-- **`<X>StageSpec`** — pure configuration: layout, transition matrix,
-  closures, `Param`-typed hyperparameters, `element_type`. Immutable
-  by convention. The Spec carries everything the K-operator needs
-  besides the runtime `(V_out, env)`.
-- **`<X>StageBuffer`** — per-call state: `kernel`, `scratch`,
-  `V_start`, `Λ_end`, `cache::CacheState`. Fresh on every
-  `allocate(spec)` call; buffers are not shared across uses of the
-  same Spec. A transition path's per-period chains share one Spec but
-  each carry their own Buffer.
+- **`<X>StageSpec`** — pure stage-specific configuration: axis names,
+  user closures, parameters. **Layout-free and eltype-free.**
+  Immutable by convention. The Spec carries everything the K-operator
+  needs besides the runtime `(V_out, env)` and the runtime layout.
+- **`StageBuffer{Kernel, Scratch, V, Λ, LIn, LOut}`** — per-call
+  state. A single generic struct (in `src/stages/abstract.jl`)
+  parameterised on the stage's `Kernel` and `Scratch` types and on the
+  concrete V/Λ array types. Carries the materialised K-operator data
+  (`kernel`), per-stage scratch (`scratch`), the V/Λ output arrays
+  (`V_start`, `Λ_end`), the layouts the buffer was allocated against
+  (`input_layout`, `output_layout`), and a `CacheState`. Fresh on
+  every `allocate(spec, layout)` call; buffers are not shared across
+  uses of the same Spec.
 - **`<X>Stage`** — the bundled wrapper `(; spec, buffer)` users
-  construct and pass around. Only `<X>Stage` is exported; Spec and
-  Buffer are internal.
+  construct and pass around. Emitted by `@definestage <X>Stage
+  <X>StageSpec [kernel=K] [scratch=S]`; only `<X>Stage` is exported,
+  Spec is internal.
 
-Most users never see the Spec/Buffer layer. They construct a
+Under the 2026-05-25 protocol refactor there is no per-stage `Buffer`
+struct — every stage shares the generic `StageBuffer`. The Kernel and
+Scratch types are the stage's degrees of freedom; everything else
+about the buffer is universal.
+
+Most users never see the Spec layer. They construct a
 `MarkovStage(layout; axis = :y, transition = P)`, compose with `∘`,
 and call `backward!` / `forward!` / `solve_steady_state_given_env!` on
 the bundled object. The split exists to make three things tractable:
@@ -57,38 +73,41 @@ the bundled object. The split exists to make three things tractable:
   separated and the kernel materialised at period `t`'s backward is
   the kernel consumed at period `t`'s forward. The L05 "stale-kernel
   in transition" footgun is impossible by construction.
-- **Eltype switching for AD.** `with_eltype(stage, T)` rebuilds the
-  Spec under a new element type (e.g., `ForwardDiff.Dual{...}`) and
-  bundles a fresh Buffer at that eltype. The user's closures are
-  shared across eltypes; static array fields can be promoted with
-  conversion; the Spec stays small.
-- **Future GPU/CPU dispatch.** Spec and Buffer carry concrete array
-  types as parametric type variables. A `MarkovStage{Matrix, ...}`
-  and a `MarkovStage{CuArray, ...}` are different concrete
+- **Eltype switching for AD.** `with_eltype(stage, T)` rebundles the
+  same Spec against the same layout at the new eltype, allocating a
+  fresh Buffer at `T` (e.g., `ForwardDiff.Dual{...}`). Since the Spec
+  is layout/eltype-free, this is a single generic operation — no
+  per-stage `with_eltype` method needed (see §12).
+- **Future GPU/CPU dispatch.** Buffers parametrise on their concrete
+  V/Λ array types. A `MarkovStage` whose buffer holds `Matrix` and
+  one whose buffer holds `CuArray` are different concrete
   instantiations; algorithmic methods can dispatch on the buffer's
   concrete array type. (See `lift_gpu` in Status.)
 
-Method signatures are **Spec/Buffer-keyed at the primary**, with
-bundled-Stage one-line delegates:
+Method signatures are **buffer-first at the primary**, with
+bundled-Stage delegates:
 
 ```julia
-backward!(spec::MarkovStageSpec, V_end, env, buffer)  =  ...           # primary
-backward!(stage::AbstractStage,  V_end, env)          =                # delegate
-    backward!(stage.spec, V_end, env, stage.buffer)
+backward!(buffer, spec::MarkovStageSpec, V_end, env)  =  ...          # primary
+backward!(stage::AbstractStage, V_end, env)           =               # delegate
+    backward!(stage.buffer, stage.spec, V_end, env)
 ```
 
-This convention is universal: `backward!`, `forward!`,
-`backward_adjoint!`, `forward_adjoint!`, `allocate`, `with_eltype`,
-`solve_steady_state_given_env!`, `solve_transition_given_env_path!`,
-`compute_direct_jacobian!` — each has a Spec/Buffer-keyed primary in
-the stage-implementation files (or `outer_loop_internal.jl` for the
-solver helpers) and a Stage-keyed delegate in the public surface
-(`outer_loop.jl`). Julia's multiple dispatch routes the calls.
+The buffer-first convention puts dispatchable state (the array types,
+the layout types, the kernel struct) at the head of the signature
+where multiple dispatch can see it cleanly. The bundled delegate is a
+one-liner.
 
-The `outer_loop.jl` / `outer_loop_internal.jl` split is the only place
-the public Stage-keyed form absorbs nontrivial bookkeeping
-(warm-starting from buffer state, copying results back, computing
-moments). The delegate is otherwise a one-liner.
+This convention is universal for the per-stage layer — `backward!`,
+`forward!`, `backward_adjoint!`, `forward_adjoint!` — and for the
+spec-keyed primaries of the outer-loop helpers
+(`solve_steady_state_given_env!`,
+`solve_transition_given_env_path!`, `compute_direct_jacobian!`),
+which live in `outer_loop_internal.jl`. The `outer_loop.jl` file
+contains the Stage-keyed public delegates. The split is where the
+public Stage-keyed form absorbs nontrivial bookkeeping (warm-starting
+from buffer state, copying results back, computing moments); the
+per-stage delegates are otherwise one-liners.
 
 ## 3. The K-operator and V/Λ duality
 
@@ -118,23 +137,35 @@ this identity for free. The test suite exercises it as the per-stage
 correctness check — duality holds iff backward and forward apply
 truly adjoint operators.
 
-Layout-changing stages (`ForgetfulSumStage` drops an axis) have
-`S_in ≠ S_out`: backward broadcasts V along the dropped axis, forward
-sums Λ along it, and duality holds because broadcast-along-axis and
-sum-along-axis are adjoint in the natural pairing.
+Layout-changing stages have `S_in ≠ S_out` and the framework tracks
+both layouts on the buffer (`input_layout`, `output_layout`). A Spec
+declares its output shape by overriding the `output_layout(spec,
+layout)` trait (default: identity). `ForgetfulSumStage` overrides it
+to `drop_axis(layout, spec.forget_axis)`; backward broadcasts V along
+the dropped axis, forward sums Λ along it, and duality holds because
+broadcast-along-axis and sum-along-axis are adjoint in the natural
+pairing. `input_layout(spec, layout)` exists symmetrically but no
+current stage overrides it.
 
 ## 4. The stage interface
 
-Every stage implements four Spec-keyed primaries:
+Every stage class implements (at most):
 
 ```julia
-allocate(spec, T = spec.element_type)         -> Buffer
-backward!(spec, V_end, env, buffer)           -> V_start
-forward!(spec,  Λ_start, buffer)              -> Λ_end
-static_env_deps(::Type{spec_type})            -> NamedTuple  # default: ()
+allocate_kernel(spec, T, layout)  -> Kernel  # default: nothing
+allocate_scratch(spec, T, layout) -> Scratch # default: nothing
+backward!(buffer, spec, V_end, env)          -> V_start  # primary
+forward!(buffer, spec, Λ_start)              -> Λ_end    # primary
+output_layout(spec, layout)                  -> StateLayout  # default: layout
+default_eltype(spec)                         -> Type    # default: Float64
+static_env_deps(::Type{spec_type})           -> NamedTuple  # default: ()
 ```
 
-Bundled `AbstractStage` delegates:
+The framework provides `allocate(spec, layout, T)` (builds a fresh
+`StageBuffer` by calling `allocate_kernel` / `allocate_scratch`,
+sizing `V_start`/`Λ_end` from `input_layout`/`output_layout`), the
+bundled wrapper struct + constructors + `bundle` method via
+`@definestage`, and the bundled-Stage delegates:
 
 ```julia
 backward!(stage, V_end, env)                  # 3-arg
@@ -144,8 +175,17 @@ forward!(stage, Λ_start, V_end, env; kwargs)  # 4-arg, cache-checking
 
 `backward!` populates `buffer.kernel` (the K-operator's runtime data),
 writes into `buffer.V_start`, stamps `buffer.cache` via
-`_seat_cache!`, and returns `V_start`. `forward!` reads the kernel,
-writes `buffer.Λ_end`, returns it.
+`_seat_cache!(buffer, V_end, env)`, and returns `V_start`. `forward!`
+reads the kernel, writes `buffer.Λ_end`, returns it. The user reads
+layout off the buffer: `(; input_layout, output_layout) = buffer`.
+
+The `_seat_cache!` call is **explicit at the end of every concrete
+`backward!`**. Folding it into the bundled-stage delegate was
+considered and rejected: the chain backward seats the chain-level
+cache after all component backwards have run, and each component
+seats its own cache from inside its own backward — both invariants
+need to hold simultaneously, and making `_seat_cache!` implicit
+would break the symmetric per-component story.
 
 **`forward!` does not take `env`.** Once backward has materialised K
 into the kernel, forward needs nothing else. Skipping the env argument
@@ -153,15 +193,11 @@ on forward is what makes the cache-checking 4-arg `forward!` possible
 (§5) and what eliminates a class of "I changed env between the V and
 Λ sweeps and forgot to re-seat the kernel" bugs.
 
-`allocate(spec, T)` produces a fresh Buffer. Pre-allocated `V_start`
-and `Λ_end` arrays can be passed as kwargs — `ProductStage` uses this
-to stitch component buffers as views into a fused tensor:
-
-```julia
-allocate(spec, T; V_start = nothing, Λ_end = nothing) -> Buffer
-```
-
-Stages that own all their state (the common case) ignore the kwargs.
+`allocate(spec, layout, T)` produces a fresh Buffer. Pre-allocated
+`V_start` and `Λ_end` arrays can be passed as library-internal kwargs
+— `ProductStage` uses this to stitch component buffers as views into
+a fused tensor. Stages that own all their state (the common case)
+never see those kwargs.
 
 ## 5. The kernel cache
 
@@ -210,8 +246,8 @@ to manage the invariant themselves.
 ## 6. Composition under `∘`, product under `×`
 
 ```julia
-Base.:∘(a::AbstractStageSpec, b::AbstractStageSpec) = ChainStageSpec((a, b))
-Base.:∘(a::AbstractStage,     b::AbstractStage)     = bundle(a.spec ∘ b.spec)
+Base.:∘(a::AbstractStageSpec, b::AbstractStageSpec) = ChainStageSpec(_compose_spec_tuples(a, b))
+Base.:∘(a::AbstractStage,     b::AbstractStage)     = ChainStage((a, b))
 ```
 
 `a ∘ b` is **time-ordered**: `a` runs first. This is the opposite of
@@ -220,11 +256,13 @@ The stage convention follows the math (stages composed in time order);
 the docstrings on `∘` flag the opposite-of-Function direction.
 
 Composition is a no-allocation operation at the Spec layer:
-`ChainStageSpec((s1, s2, …))` holds a tuple of component Specs, a
+`ChainStageSpec((s1, s2, …))` holds a tuple of component Specs and a
 mutable `moments :: Dict{Symbol, Any}` slot (the only mutable field
-on any Spec), and an `out_layout` derived from the last component.
-Nested `ChainStageSpec`s are auto-flattened: `(a ∘ b) ∘ c` produces a
-3-tuple `(a, b, c)`, not a 2-tuple `((a, b), c)`. Moments cannot be
+on any Spec). Nested `ChainStageSpec`s are auto-flattened: `(a ∘ b) ∘
+c` produces a 3-tuple `(a, b, c)`, not a 2-tuple `((a, b), c)`. The
+chain's input/output layouts are determined by walking components
+through `_allocate_chain_buffers` at allocate time — each component's
+`output_layout` is threaded into the next's input. Moments cannot be
 attached before composition: `∘` refuses to compose a chain that
 already carries moments (call `define_moment!` last).
 
@@ -253,8 +291,7 @@ caller's responsibility, structurally identical to time-fixed-point
 threading.
 
 v1 of `ProductStageSpec` requires uniform components: same concrete
-Spec type, same input layout (via cheap structural equality on axis
-names and sizes). Heterogeneous-shape products raise at construction.
+Spec type. Heterogeneous-type products raise at construction.
 
 ## 7. Layouts, axes, cell iteration
 
@@ -302,7 +339,7 @@ mask = some_predicate.(cell_array(layout); env)
 (Closures broadcast with `env` as a kwarg are captured per-broadcast,
 not broadcast themselves.)
 
-## 8. `env`, `Param`, closures
+## 8. `env`, env-resolvable spec fields, closures
 
 `env` is the household's economic environment — a `NamedTuple`
 carrying prices, calibration scalars, aggregate-state coordinates,
@@ -328,37 +365,51 @@ F_u` with `F_u` a type parameter). The closure type participates in
 the Spec's type signature, so dispatch on different closures
 specialises the hot path.
 
-`Param{T}` wraps a stage hyperparameter that can be calibrated or
-swept at runtime:
+**Env-resolvable parameters** — stage hyperparameters that may be
+calibrated to a literal value or read from `env` at runtime — are
+declared as `Union{T, Symbol}` fields:
 
 ```julia
-ε = Param(0.25)                 # calibrated: literal value
-ε.val = :ξ_logit                 # mode-flip: now reads env.ξ_logit
+struct LogitChoiceStageSpec{F, BF, T<:Real} <: AbstractStageSpec
+    choice_axis :: Symbol               # pure-Symbol label field
+    ε           :: Union{T, Symbol}     # env-resolvable parameter
+    ...
+end
+
+# Inside backward!:
+ε = resolve(spec.ε, env)   # spec.ε  if Real;  env[spec.ε]  if Symbol
 ```
 
-`resolve(p, env)` is type-stable through union-splitting on the
-small `Union{T, Symbol}`. Swept Params register in the Spec's
-effective env slice (§9). Mode-flip is a field mutation (Param is
-mutable), not a stage rebuild — useful for estimation outer loops and
-sensitivity sweeps. (The pattern is supported but not exercised by
-any shipping example; see Status.)
+The pattern replaces the pre-2026-05-25 `Param{T}` wrapper, which
+was deleted. The discriminator is the **declared field type**:
+`Union{T, Symbol}` is env-resolvable; pure `Symbol` is a label and
+ignored by `effective_env_slice`. `resolve` is type-stable through
+union-splitting on the small union. Switching modes — calibrated to
+swept — is a Spec rebuild (`<Spec>(...; ε = :ξ)`), not a mutation, so
+the change participates cleanly in dispatch.
 
 ## 9. Env slicing — `static_env_deps`, `effective_env_slice`
 
 Each concrete Spec type declares a `static_env_deps(::Type{<:X}) ::
 NamedTuple` — `env` fields the **type** itself reads, irrespective of
 user closures. The default is `NamedTuple()` and no current shipping
-stage overrides it (closure-borne env reads are the dominant pattern
-and aren't introspected). The hook is in place for stages whose Spec
-fields themselves reference env keys — e.g., a future `RateChange`
-stage that statically reads `env.r_path` without a user closure.
+stage overrides it. The hook is in place for stages whose Spec
+fields themselves reference env keys via mechanisms other than the
+`Union{T, Symbol}` pattern.
 
-`effective_env_slice(spec)` is the union of `static_env_deps` and any
-swept `Param` keys. `chain_env_names(chain)` is the union across all
-component stages. `env_schema(spec)` returns a prototype NamedTuple of
-the required env keys; `make_env(spec; kwargs...)` validates a
-user-constructed env against the schema (errors on missing required
-keys; permissive about extras).
+`effective_env_slice(spec)` is the union of `static_env_deps` and the
+runtime env-resolved field names: any `Union{T, Symbol}` field whose
+current value is a `Symbol`. The mechanism (`_env_field_names`,
+`_is_env_resolvable` in `src/stages/abstract.jl`) iterates fields,
+checks the **declared** type (so pure-`Symbol` label fields like
+`choice_axis` are correctly skipped — their type is `Symbol`, not a
+`Union`), and reads the current `Symbol` value as the env key.
+
+`chain_env_names(chain)` is the union across all component stages.
+`env_schema(spec)` returns a prototype NamedTuple of the required env
+keys; `make_env(spec; kwargs...)` validates a user-constructed env
+against the schema (errors on missing required keys; permissive
+about extras).
 
 Closure-borne env reads are **not** introspected. Missing fields
 surface at the first `backward!` call as `getproperty` errors. The
@@ -423,7 +474,7 @@ allocates `T` per-period chains internally and runs backward then
 forward sweeps across the path. There is no single Buffer for the
 caller to thread (per-period buffers are an implementation detail), so
 the Stage-keyed form is a thin delegate that just forwards
-`stage.spec`.
+`stage.spec` together with the input layout from the caller's buffer.
 
 `compute_direct_jacobian!` is a diagnostic helper, **direct-effect
 only**: period-0 finite-difference of moments with respect to named
@@ -437,16 +488,15 @@ v1 scope — the real fake-news Jacobian goes through
 A **lift** takes a stage and produces a new stage of the same kind
 (with possibly different eltype, array type, or dimensionality),
 preserving the K-operator structure and hence composition. The
-library ships four:
+library ships three.
 
-### `with_eltype(spec_or_stage, T)` — eltype rebuild
+### `with_eltype(stage, T)` — eltype rebuild
 
-The workhorse. Returns a new Spec with `element_type = T` and `Param`
-fields re-typed; the bundled-stage form (`with_eltype(stage, T)`)
-returns a fresh `<X>Stage` whose buffer is allocated at the new
-eltype. Each concrete Spec implements its own method
-(`src/lifts/jacobian.jl`). `ChainStageSpec` and `ProductStageSpec`'s
-`with_eltype` delegate to their components and preserve moments.
+The workhorse. Under the layout/eltype-free Spec, this is a **single
+generic operation** — `bundle(stage.spec, stage.buffer.input_layout,
+T)` — defined once in `src/lifts/jacobian.jl`. No per-stage method
+needed; the same Spec is rebundled against the same layout at the
+new T, and the framework's `allocate(spec, layout, T)` does the rest.
 
 `with_eltype` is functorial in `T` (composition of stages and
 `with_eltype` commute) and is the foundation of forward-mode AD.
@@ -456,20 +506,23 @@ eltype. Each concrete Spec implements its own method
 Forward mode (default): `dual_eltype = ForwardDiff.Dual{tag,
 primal_eltype, n_dual}`; rebuild via `with_eltype(stage,
 dual_eltype)`. The user typically wraps the rebuilt chain in
-`ForwardDiff.derivative` or `ForwardDiff.jacobian`. Static fields
-(transitions, costs, user closures) keep their original eltype; the
-cross-eltype matmul `Float64 * Dual → Dual` flows through
+`ForwardDiff.derivative` or `ForwardDiff.jacobian`. Static Spec
+fields (transitions, costs, user closures) keep their original
+eltype; the cross-eltype matmul `Float64 * Dual → Dual` flows through
 LinearAlgebra's generic `mul!` fallback.
 
 Reverse mode (`mode = :reverse`): returns the stage unchanged; the
 reverse-mode surface is exposed via per-stage adjoint methods. Each
-stage in the library has a `forward_adjoint!` method; choice-stage
-adjoints (Argmax, LogitChoice, Migration, ConsumptionSavings) use the
-envelope theorem to reuse the K materialised at the primal eval point
-as a frozen linear operator for the VJP, with subgradients at tie
-boundaries.
+stage in the library has a `forward_adjoint!(spec, dΛ_end, buffer)`
+method (and `backward_adjoint!`); choice-stage adjoints (Argmax,
+LogitChoice, Migration, ConsumptionSavings) use the envelope theorem
+to reuse the K materialised at the primal eval point as a frozen
+linear operator for the VJP, with subgradients at tie boundaries.
+The pattern of manual per-stage adjoints is flagged as architectural
+debt to be redesigned separately (AD-based, structural K-transpose
+lift, or other); the current methods are mechanical.
 
-The chain's adjoint passes implement the chain rule: `ChainStage`'s
+The chain's adjoint passes implement the chain rule: `ChainStageSpec`'s
 `backward_adjoint!` iterates over components in forward order;
 `forward_adjoint!` iterates in reverse. Both read from `spec.stages[i]`
 and `buffer.stages[i]` in lockstep.
@@ -511,56 +564,25 @@ realises it as code.
 `examples/aiyagari_mit_shock/ssj.jl` runs the full pipeline on the
 3-stage Aiyagari chain.
 
-## 14. Conventions for stage authors
+## 14. Adding a new stage
 
-If you're adding a new stage `<Y>Stage`, the checklist:
+The mechanics — what to write, the `@definestage` line, common
+patterns like next-state caching and the shared softmax helper, and a
+checklist of footguns — live in **`HOWTO_STAGE.md`**. The protocol
+is small: a Spec, optionally a Kernel and Scratch, `allocate_kernel`
+/ `allocate_scratch`, `backward!`, `forward!`, and one
+`@definestage` line.
 
-1. **Define three structs.** `<Y>StageSpec <: AbstractStageSpec` with
-   the immutable configuration. `<Y>StageBuffer <: AbstractStageBuffer`
-   with `kernel`, `scratch`, `V_start`, `Λ_end`, `cache::CacheState`.
-   `<Y>Stage <: AbstractStage` with `(; spec, buffer)`.
-2. **Spec constructor.** `<Y>StageSpec(layout; kwargs...)` resolves
-   axis positions, wraps any `Param`-typed kwargs (`p isa Param ? p :
-   Param(p)`), validates shapes. Use `Val`-typed type parameters for
-   compile-time options like `extrap` on WealthChange or
-   `monotone_search` on ConsumptionSavings.
-3. **`<Y>Stage` constructor.** Takes the same kwargs as the Spec plus
-   optional `V_start` / `Λ_end` (for view-stitching by ProductStage).
-   Builds the Spec, allocates a Buffer, returns the bundled wrapper.
-4. **`allocate(spec, T; V_start, Λ_end)`.** Allocate `V_start`,
-   `Λ_end`, kernel-shaped state, scratch, fresh `CacheState`. Use
-   `_alloc_VΛ(layout, T, V_start, Λ_end)` to handle the
-   optional-passthrough pattern.
-5. **`backward!(spec, V_end, env, buffer)`.** Populate
-   `buffer.kernel` from `(V_end, env)`, write `buffer.V_start`, call
-   `_seat_cache!(buffer, V_end, env)`, return `V_start`.
-6. **`forward!(spec, Λ_start, buffer)`.** Read `buffer.kernel`,
-   write `buffer.Λ_end`, return it. Do not consult `env` — env was
-   consumed by backward.
-7. **`static_env_deps(::Type{<Y>StageSpec})`** if the stage type
-   reads env fields not declared by user closures. Default:
-   `NamedTuple()`. Most stages don't need to override.
-8. **`with_eltype(spec, T)`** — rebuild the Spec with the new
-   `element_type` and re-typed `Param` fields. One-liner that
-   reconstructs the Spec via its kwarg constructor.
-9. **`bundle(spec) = <Y>Stage(spec)`.** One-liner; mirrors every
-   other concrete stage.
-10. **Reverse-mode adjoints if applicable.** If the K-operator is
-    V/θ-independent (linear K), `forward_adjoint!` and
-    `backward_adjoint!` follow from primal apply. For non-linear-K
-    stages, use the envelope theorem at the materialised K (see
-    `LogitChoiceStage`'s adjoint methods for the template).
-11. **Tests.** Per-stage backward/forward correctness; duality
-    identity (`⟨V_in, Λ_in⟩ = ⟨V_out, Λ_out⟩ + ⟨r, Λ_in⟩`);
-    composition associativity with existing stages; ForwardDiff
-    rebuild via `lift_jacobian(stage; mode = :forward)`; adjoint
-    correctness via finite differences against the primal.
+The single most useful correctness test for a new stage is the
+**duality identity** `⟨V_in, Λ_in⟩ = ⟨V_out, Λ_out⟩ + ⟨r, Λ_in⟩`. If
+it holds, the stage's `forward!` and `backward!` are truly adjoint,
+which catches most off-by-one indexing errors, share-vs-sum-along-axis
+mismatches, and policy-vs-action-index confusions in one number.
 
-The duality identity (item 11) is the single most useful correctness
-test. If it holds, the stage's `forward!` and `backward!` are truly
-adjoint, which catches most off-by-one indexing errors, share-vs-
-sum-along-axis mismatches, and policy-vs-action-index confusions in
-one number.
+Canonical worked examples, in ascending complexity:
+`identity_stage.jl` (21 LOC), `utility.jl` (28 LOC), `markov_along.jl`
+(85 LOC), `logit_choice.jl` (85 LOC), `argmax.jl` (92 LOC). Read
+alongside `HOWTO_STAGE.md`.
 
 ## 15. Status
 
@@ -570,28 +592,32 @@ one number.
   define per-stage Spec methods that rebuild with `cu(field)` on
   array-typed static fields, let algorithm-divergent methods
   dispatch on the buffer's concrete array type. The Spec/Buffer
-  trichotomy is already structured to support this — buffers
-  parametrise on their concrete array type, so a
-  `MarkovStage{CuArray,...}` is a different concrete instantiation
-  of the same struct definition.
+  trichotomy is already structured to support this — the generic
+  `StageBuffer` parametrises on its V/Λ array types, so a chain
+  whose buffer holds `CuArray`-typed slots is a different concrete
+  instantiation of the same struct definition.
 - **`WealthChangeStage.backward_adjoint!` is stubbed.** Only
   `forward_adjoint!` is implemented (which is what
   `expectation_vectors` needs). The backward adjoint would mirror
   the share-based gather as a scatter — add when reverse-mode
   gradients through V on this stage are needed.
-- **`Param`-keyed swept mode is supported but unexercised by any
-  shipping example.** The pattern is `Param(:env_key)` for a field
-  that reads its value from `env.env_key` at evaluation time. If no
-  consumer materialises in 2–4 weeks, candidate for pruning.
-- **`static_env_deps` is a hook with no current overriders.**
-  Every concrete Spec returns `NamedTuple()`. With `closure_deps`
-  dropped (closures' env reads are not introspected), the hook is
-  scaffolding for stages whose Spec fields themselves reference env
-  keys. Kept as a documented extension point.
-- **`ProductStage` v1 requires uniform components.** Heterogeneous
-  shapes (working vs. retired with different state spaces,
-  age-varying chain content) raise at construction. Implementation
-  deferred until a consumer needs it.
+- **Per-stage adjoints are flagged for redesign.** The manual
+  `forward_adjoint!` / `backward_adjoint!` methods are mechanical
+  ports of the primal operators and represent architectural debt.
+  Candidates for the redesign include AD-driven adjoints, a
+  structural K-transpose lift, or generated adjoints from the
+  K-operator declaration. Do not extend the manual pattern to new
+  stages without surfacing the design question first.
+- **`static_env_deps` has no current overriders.** Every concrete
+  Spec returns `NamedTuple()`. With closure env reads not
+  introspected, the hook is scaffolding for stages whose Spec
+  fields themselves reference env keys via mechanisms other than
+  the `Union{T, Symbol}` env-resolvable pattern. Kept as a
+  documented extension point.
+- **`ProductStage` v1 requires uniform components** (same concrete
+  Spec type). Heterogeneous shapes (working vs. retired with
+  different state spaces, age-varying chain content) raise at
+  construction. Implementation deferred until a consumer needs it.
 - **`compute_direct_jacobian!` is diagonal-only.** Period-0 direct
   effect on `J[t, t]`, off-diagonals zero. The real fake-news
   Jacobian goes through `expectation_vectors + build_F + J_from_F`

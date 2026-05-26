@@ -226,7 +226,7 @@ end
 # Broadcastable cell array #
 #--------------------------#
 
-"""CLAUDE
+"""
 Return an `N`-D dense `Array{NamedTuple}` of cell values, shape =
 `layout_size(layout)`. Each entry is the axis-value `NamedTuple` for that
 multi-index. Suitable as a broadcast operand for closures of the form

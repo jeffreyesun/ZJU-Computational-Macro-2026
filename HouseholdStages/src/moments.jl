@@ -117,11 +117,9 @@ find cell coordinates.
 The Spec-keyed signature is the primary; the bundled-stage form is
 one-line sugar.
 """
-function compute_moments(spec::ChainStageSpec, Λ, env)
+function compute_moments(spec::ChainStageSpec, layout::StateLayout, Λ, env)
     moments = spec.moments
-    isempty(moments) &&
-        error("compute_moments: ChainStageSpec has no moments attached; call define_moment! first.")
-    layout = spec.out_layout
+    @assert !isempty(moments) "compute_moments: ChainStageSpec has no moments attached; call define_moment! first."
     out = Dict{Symbol, Any}()
     for (name, mspec) in moments
         out[name] = _eval_spec(mspec, layout, Λ, env)
@@ -129,7 +127,12 @@ function compute_moments(spec::ChainStageSpec, Λ, env)
     return NamedTuple{Tuple(keys(out))}(Tuple(values(out)))
 end
 
-compute_moments(chain::ChainStage, Λ, env) = compute_moments(chain.spec, Λ, env)
+# Compat: spec-only call uses the spec's terminal output layout (chain walks components).
+compute_moments(spec::ChainStageSpec, Λ, env) =
+    error("compute_moments(spec, Λ, env): need a layout. Call `compute_moments(stage, Λ, env)` or `compute_moments(spec, layout, Λ, env)`.")
+
+compute_moments(chain::ChainStage, Λ, env) =
+    compute_moments(chain.spec, chain.buffer.output_layout, Λ, env)
 
 function _eval_spec(spec::MomentSpec, layout::StateLayout, Λ, env)
     cells_arr = cell_array(layout)

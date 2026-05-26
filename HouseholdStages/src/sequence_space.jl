@@ -58,12 +58,11 @@ function expectation_vectors(chain::AbstractStage, integrand::Function, T::Int)
 end
 
 # Terminal output layout — used to size the integrand-broadcast array.
-_terminal_out_layout(s::AbstractStage) = s.spec.output_layout
-_terminal_out_layout(c::ChainStage)    = c.spec.out_layout
+_terminal_out_layout(s::AbstractStage) = output_layout(s)
 
-# Eltype helper: fish out the buffer eltype of the chain's first stage.
-eltype_from_chain(chain::ChainStage) = eltype(chain.buffer.stages[1].V_start)
+# Eltype helper: fish out the buffer eltype.
 eltype_from_chain(s::AbstractStage)  = eltype(s.buffer.V_start)
+eltype_from_chain(chain::ChainStage) = eltype(chain.buffer.stages[1].V_start)
 
 """
     J_from_F(F::AbstractMatrix) -> Matrix
