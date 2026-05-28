@@ -1,1 +1,0 @@
-This idea is less well-developed, but I'm imagining it would look something like SearchMatching.
