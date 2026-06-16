@@ -577,12 +577,12 @@ uuid = "076d061b-32b6-4027-95e0-9a2c6f6d7e74"
 version = "0.2.0"
 
 [[deps.HouseholdStages]]
-deps = ["ForwardDiff", "LinearAlgebra", "Printf"]
-git-tree-sha1 = "ed7456fc589614526bfee2c61ea1adf290158008"
-repo-rev = "v0.1.0"
+deps = ["ForwardDiff", "LinearAlgebra", "NNlib", "Printf"]
+git-tree-sha1 = "5b97cf007dd7e69a486e98b4bf3560ff2e7c85fa"
+repo-rev = "v0.2.1"
 repo-url = "https://github.com/jeffreyesun/HouseholdStages.jl"
 uuid = "0c98d319-5992-4fdc-b5ff-08915dacd05b"
-version = "0.1.0"
+version = "0.2.1"
 
 [[deps.IRTools]]
 deps = ["InteractiveUtils", "MacroTools"]
