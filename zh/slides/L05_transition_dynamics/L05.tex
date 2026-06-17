@@ -1,0 +1,425 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+\usepackage{fontspec}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+% DejaVu Sans Mono (not Latin Modern Mono) for the monospace face because
+% LM Mono lacks Greek glyphs — β/γ inside lstlisting and \texttt{} would be
+% silently dropped otherwise.
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+\title{第五讲：预期——转移动态}
+\subtitle{异质性主体宏观经济学的计算方法}
+\author{孙振越 (Jeffrey Sun)}
+\institute{多伦多大学}
+\date{2026年5月15日}
+
+\begin{document}
+
+\maketitle
+
+% =============================================================
+\section[HouseholdStages]{HouseholdStages}
+% =============================================================
+
+\begin{frame}{HouseholdStages}
+  \begin{itemize}
+    \item 用于构建异质性主体宏观模型家庭模块的阶段（Stages）实现。
+    \item Auclert--Bardóczy--Rognlie--Straub 的 \textbf{SSJ 工具包}（Python）也有阶段实现。
+    \item Econ-ARK 也提供了一种形式的阶段。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{这个包提供了什么}
+  \begin{itemize}
+    \item \textbf{阶段实现。} \texttt{MarkovStage}、\texttt{WealthChangeStage}、\texttt{ConsumptionSavingsStage}、\texttt{LogitChoiceStage}、\texttt{MigrationStage}、\texttt{BorrowingConstraintStage}、\texttt{AssetPriceChangeStage} $\dots$
+    \item \textbf{组合。} \texttt{$\circ$} 串接阶段；\texttt{lift\_moments} 附加积分。
+    \item \textbf{内层求解辅助函数。} 给定 env（价格与参数），计算稳态与转移的 V、$\Lambda$。
+    \item \textbf{函子式提升。} \texttt{lift\_jacobian}（自动微分）、\texttt{lift\_gpu}。
+    \item \textbf{SSJ 工具。} 序列空间雅可比（在 L6+ 中讲解）。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{这个包\emph{不}做什么}
+  这个库处理\textbf{给定 env 下的家庭模块}。它\emph{不}：
+  \begin{itemize}
+    \item 决定你的总量状态。
+    \item 从 $\bar K$ 计算价格（厂商模块）。
+    \item 为校准或市场出清运行外层循环。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{为什么这样拆分}
+  \begin{itemize}
+    \item 家庭模块：跨异质性主体模型的\textbf{通用组件}。
+    \item 均衡、校准、转移：\textbf{模型特定}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{稳态内层求解辅助函数}
+  \begin{lstlisting}
+  # 在固定的 env 下，V 反向迭代至不动点。
+  solve_vfi_steady_state_given_env!(hh, env)
+
+  # 用反向扫描填充的策略，将 Λ 正向迭代至平稳。
+  solve_lambda_steady_state_given_env!(hh)
+
+  # 两者的打包：先 V 后 Λ，再附加矩。
+  solve_steady_state_given_env!(hh, env)
+  \end{lstlisting}
+  三者都将 \texttt{env} \textbf{视为给定}。它们迭代家庭模块，但不更新价格或参数。
+\end{frame}
+
+% =============================================================
+\section{以阶段构建 Aiyagari 稳态}
+% =============================================================
+
+\begin{frame}{与之前相同的模型}
+  \begin{itemize}
+    \item \textbf{阶段链}（时间顺序）：\[ \text{z\_shock} \circ \text{income} \circ \text{savings}. \]
+    \item \textbf{厂商。} 柯布—道格拉斯，劳动 $L$ 固定。
+    \item \textbf{均衡。} $R = R^{\mathrm{implied}}(K^{\mathrm{supplied}}(R))$.
+    \item \textbf{外层循环。} 对 $R$ 进行带阻尼的\textbf{试错调价（tatonnement）}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{状态布局}
+  \begin{lstlisting}
+  layout = StateLayout(
+      StateAxis(:wealth, continuous_grid(0, 100; length=400, spacing=:log)),
+      StateAxis(:z,      [0.6, 1.0, 1.4]),
+  )
+  \end{lstlisting}
+  \begin{itemize}
+    \item \textbf{wealth}（连续，400 点对数网格）。
+    \item \textbf{z}（生产率；离散，3 个水平）。
+    \item 闭包读取 \texttt{cell.wealth}、\texttt{cell.z}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{阶段 1：$z$ 冲击}
+  \begin{lstlisting}
+  z_shock = MarkovStage(layout; axis=:z, transition=p.Π_z)
+  \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{阶段 2：收入}
+  \begin{lstlisting}
+  income = WealthChangeStage(layout; wealth_post=(cell; env) -> env.R * cell.wealth + env.w * cell.z)
+  \end{lstlisting}
+  \begin{itemize}
+    \item 之前的例子是对齐到网格。库函数则连续地重新插值。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{阶段 3：消费储蓄}
+  \begin{lstlisting}
+  savings = ConsumptionSavingsStage(layout; β=p.β, utility=(cell, c; env) -> u_crra(c, Val(p.σ)), monotone_search=:divide_conquer)
+  \end{lstlisting}
+  \begin{itemize}
+    \item \texttt{:divide\_conquer}：当策略关于 $b$ 单调时，采用更快的 $O(N \log N)$ 算法。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{组合}
+  \begin{lstlisting}
+  hh = z_shock ∘ income ∘ savings
+  \end{lstlisting}
+  \begin{itemize}
+    \item \texttt{$\circ$} 按时间顺序组合各阶段。
+    \item 家庭模块\emph{本身就是一个阶段}：拥有自己的 \texttt{backward!} 和 \texttt{forward!}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{定义矩}
+  \begin{lstlisting}
+  hh = define_moments!(hh; K_supplied=at_end(integrand=:wealth, reduce=sum))
+  \end{lstlisting}
+  \begin{itemize}
+    \item \texttt{define\_moments!}：在 $\Lambda$ 上定义积分。这里 $K^{\mathrm{supplied}} = \int b\,\mathrm{d}\Lambda^\text{end}$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{给定 $R$ 求解稳态}
+  \begin{lstlisting}
+  (;K, w) = aiyagari_supply_side(R, p)
+  env = make_env(hh; R, w)
+  res = solve_steady_state_given_env!(hh, env)
+  K_supplied = res.moments.K_supplied
+  \end{lstlisting}
+  \begin{itemize}
+    \item \textbf{第 1 行。} 由 $R$ 得到厂商侧的 $K$ 和工资 $w$。
+    \item \textbf{第 2 行。} 构建 env：$(R, w)$。
+    \item \textbf{第 3 行。} 求出稳态 $V$ 和 $\Lambda$。
+    \item \textbf{第 4 行。} 读出 $K^{\mathrm{supplied}}$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{外层试错调价循环}
+  \begin{lstlisting}
+  R = R_init
+  while err >= rtol
+      env = make_env(hh; R, w=aiyagari_supply_side(R, p).w)
+      (;V, Λ, moments) = solve_steady_state_given_env!(hh, env)
+      R_implied = aiyagari_prices(moments.K_supplied, p).R
+      err = abs(R_implied - R)
+      R += update_speed*(R_implied - R)           # 带阻尼的试错调价
+  end
+  \end{lstlisting}
+  每一轮：$R \to (K, w) \to V,\Lambda \to K^{\mathrm{supplied}} \to R^{\mathrm{implied}}$，然后更新 $R$。
+
+  当 $|R^{\mathrm{implied}} - R| < $\texttt{rtol} 时停止。
+
+  \vspace{0.4em}
+  \footnotesize 对\emph{价格}进行试错调价是通用做法：家庭模块是价格接受者，外层循环搜索使市场出清的价格。对 $\bar K$ 进行试错调价在 Aiyagari 中恰好可行，因为资产市场与商品市场出清重合，但这并不具有一般性。
+\end{frame}
+
+% =============================================================
+\section[比较静态]{比较静态}
+% =============================================================
+
+\begin{frame}{比较静态}
+  改变一个参数，重新求解稳态。
+
+  可以把它看作对冲击的\textbf{长期}反应。
+
+  在示例校准中：
+  \begin{itemize}
+    \item $A = 1$ \,$\to$\, $\bar K_{\mathrm{pre}} = [\text{verify}]$, $\bar R_{\mathrm{pre}} = [\text{verify}]$.
+    \item $A = 1.05$ \,$\to$\, $\bar K_{\mathrm{post}} = [\text{verify}]$, $\bar R_{\mathrm{post}} = [\text{verify}]$.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{比较静态}
+  比较静态告诉你对冲击的\textbf{长期}反应。
+
+  它不告诉你：
+  \begin{itemize}
+    \item 转移的速度
+    \item 转移的路径
+    \item 冲击对当时在世者的福利影响。
+  \end{itemize}
+
+  要回答这些，我们需要转移动态。
+\end{frame}
+
+% =============================================================
+\section[转移动态]{转移动态}
+% =============================================================
+
+\begin{frame}{转移动态}
+  \begin{itemize}
+    \item \textbf{稳态。} 单一的 $(K, V, \Lambda)$。不随时间变化。
+    \item \textbf{转移。} 一个序列 $\{(K_t, V_t, \Lambda_t)\}_{t = 1,\dots,T}$。经济正在\emph{运动}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{MIT 冲击}
+  在 $t = 1$ 处的一次\textbf{永久、未预期到}的冲击。
+  \begin{itemize}
+    \item $t = 0$：处于稳态。
+    \item $t = 1$：参数永久改变。主体感到\emph{意外}。
+    \item $t \geq 1$：对外生与内生变量的整条未来路径具有\emph{完美预见}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{示例：TFP 冲击}
+  在 $t = 1$ 处的一次\emph{永久}正向 TFP 冲击：
+  \[
+    A_t = 1.05 \quad \text{for all } t \geq 1, \quad A_0 = 1.
+  \]
+  \begin{itemize}
+    \item \emph{唯一}的外生变化。
+    \item $\{R_t, w_t, K_t, V_t, \Lambda_t\}$ 作为\textbf{反应}而改变。
+    \item 设 $T = 100$，并令 $V_{T+1} = V^\text{new\_steady\_state}$ 以闭合模型。
+  \end{itemize}
+\end{frame}
+
+% =============================================================
+\section[求解 MIT 转移]{求解 MIT 转移}
+% =============================================================
+
+\begin{frame}{问题陈述}
+  \begin{itemize}
+    \item \textbf{给定：} $\{A_t\}_{t = 1}^T$。
+    \item \textbf{求：} $\{R_t, V_t, \Lambda_t\}$，使得
+  \end{itemize}
+  \begin{itemize}
+    \item $V_{T+1} = V_{\mathrm{ss}^{\mathrm{post}}}$（终端）。
+    \item $\Lambda_1 = \Lambda_{\mathrm{ss}^{\mathrm{pre}}}$（初始）。
+    \item $V_t = \text{backward}(V_{t+1}, \mathrm{env}_t)$.
+    \item $\Lambda_{t+1} = \text{forward}(\Lambda_t, V_{t+1}, \mathrm{env}_t)$.
+    \item 市场出清：$R_t = R^{\mathrm{implied}}(K_t^{\mathrm{supplied}})$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{算法}
+
+\textbf{1. 猜测路径 $\{R_t\}$。}
+
+\textbf{2. 将 $V$ 反向迭代。}
+\[
+  V_{T+1} \leftarrow V_{\mathrm{ss}^{\mathrm{post}}}, \quad V_t = \text{backward}(V_{t+1}, \mathrm{env}_t).
+\]
+
+\textbf{3. 将 $\Lambda$ 正向模拟。}
+\[
+  \Lambda_1 \leftarrow \Lambda_{\mathrm{ss}^{\mathrm{pre}}}, \quad \Lambda_{t+1} = \text{forward}(\Lambda_t, V_{t+1}, \mathrm{env}_t).
+\]
+
+\textbf{4. 更新 $R_{\mathrm{path}}$。}
+\[
+  R_t \leftarrow (1 - s)\,R_t + s\,R_t^{\mathrm{implied}}, \quad R_t^{\mathrm{implied}} = R^{\mathrm{implied}}(K_t^{\mathrm{supplied}}).
+\]
+
+\end{frame}
+
+\begin{frame}{注记：求根}
+  归根结底，问题是在序列空间中寻找超额需求函数的根：
+  \[
+    \text{excess\_demand}(\{R_t\}) = \vec{0}.
+  \]
+  为演示起见，我们使用简单而稳健的试错调价方法。
+
+  使用序列空间雅可比的基于梯度的方法可以快得多。
+\end{frame}
+
+\begin{frame}[fragile]{算法}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+hh_path = [aiyagari_household(p_new) for _ in 1:T]   # 每期一条链
+R_path = collect(range(pre.R, post.R; length=T))     # 初始猜测
+V_path[T+1] .= post.V; Λ_path[1] .= pre.Λ            # 边界条件
+while err >= rtol
+    env_path = [make_env(hh_path[t]; R=R_path[t], w=aiyagari_supply_side(R_path[t], p_new).w) for t in 1:T]
+    for t in T:-1:1                                  # 反向扫描
+        copyto!(V_path[t], backward!(hh_path[t], V_path[t+1], env_path[t]))
+    end
+    for t in 1:T                                     # 正向扫描
+        copyto!(Λ_path[t+1], forward!(hh_path[t], Λ_path[t]))
+        K_S = compute_moments(hh_path[t], Λ_path[t+1], env_path[t]).K_supplied
+        R_implied_path[t] = aiyagari_prices(K_S, p_new).R
+    end
+    err = maximum(abs.(R_implied_path .- R_path))
+    R_path .+= update_speed .* (R_implied_path .- R_path)                  # 带阻尼的试错调价
+end
+\end{lstlisting}
+\end{frame}
+
+% =============================================================
+\section[实现]{实现}
+% =============================================================
+
+\begin{frame}{初始稳态}
+
+\textbf{两者我们都需要：}
+
+\begin{itemize}
+  \item $V_{\mathrm{ss}^{\mathrm{post}}}$：反向扫描的终端条件。
+  \item $\Lambda_{\mathrm{ss}^{\mathrm{pre}}}$：正向扫描的初始条件。
+\end{itemize}
+
+\vspace{0.4em}
+
+\begin{itemize}
+  \item 第 2 节的试错调价能给出两者（在两端各运行一次）。
+  \item \textbf{设置：} $V_{\mathrm{ss}^{\mathrm{post}}} \to V_\mathrm{path}[T+1]$；$\Lambda_{\mathrm{ss}^{\mathrm{pre}}} \to \Lambda_\mathrm{path}[1]$；初始 $\{R_t\}$ 取从 $R^{\mathrm{pre}}_{\mathrm{ss}}$ 到 $R^{\mathrm{post}}_{\mathrm{ss}}$ 的一条直线。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{反向扫描}
+\begin{lstlisting}
+for t in T:-1:1
+    env_t = make_env(hh_path[t]; R=R_path[t], w=aiyagari_supply_side(R_path[t], p_new).w)
+    copyto!(V_path[t], backward!(hh_path[t], V_path[t+1], env_t))
+end
+\end{lstlisting}
+
+\end{frame}
+
+\begin{frame}[fragile]{正向扫描（重新安置核！）}
+\begin{lstlisting}
+for t in 1:T
+    env_t = make_env(hh_path[t]; R=R_path[t], w=aiyagari_supply_side(R_path[t], p_new).w)
+    copyto!(Λ_path[t+1], forward!(hh_path[t], Λ_path[t]))
+    K_S = compute_moments(hh_path[t], Λ_path[t+1], env_t).K_supplied
+    R_implied_path[t] = aiyagari_prices(K_S, p_new).R
+end
+\end{lstlisting}
+
+\end{frame}
+
+\begin{frame}[fragile]{外层试错调价更新}
+\begin{lstlisting}
+err = maximum(abs.(R_implied_path .- R_path))
+R_path .+= update_speed .* (R_implied_path .- R_path)
+\end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}{脉冲响应：资本}
+
+\textbf{形状。}
+
+\begin{itemize}
+  \item $\Delta A$ 抬高 $R$。
+  \item 更高的 $R$ $\to$ 更多储蓄。
+  \item 更多储蓄 $\to$ 更高的 $K$ $\to$ 更低的 $R$。具有自我纠正性。
+\end{itemize}
+
+\vspace{0.4em}
+
+\textbf{滞后。} 财富分布具有惯性。$K$ 的峰值滞后于 $A$ 的峰值约 $\sim 5$ 期。
+
+\end{frame}
+
+\begin{frame}{脉冲响应：$R_t$ 与 $w_t$}
+
+\textbf{$R_t$。}
+
+\begin{itemize}
+  \item 在冲击当期跳升（$A$ 在 $K$ 变动之前先上升）。
+  \item 随着 $K$ 累积，衰减回 $R^{\mathrm{post}}_{\mathrm{ss}} = 1/\beta$。
+  \item 在 Aiyagari 中 $R^{\mathrm{pre}}_{\mathrm{ss}} = R^{\mathrm{post}}_{\mathrm{ss}}$；$K$ 吸收了这一永久性移动。
+\end{itemize}
+
+\textbf{$w_t$。}
+
+\begin{itemize}
+  \item 形态相同，但冲击当期符号相反。
+  \item 随 $K$ 上升，达到一个永久更高的 $w^{\mathrm{post}}_{\mathrm{ss}}$。
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}{福利}
+
+\begin{itemize}
+  \item 富裕主体：在 $R$ 上获得短暂的资本利得。
+  \item 依赖工资的主体：受益于 $w$ 一侧。
+\end{itemize}
+
+\vspace{0.6em}
+
+对 Aiyagari，我们逐期得到一个福利效应的\emph{分布}。厘清这两条渠道正是 MIT 冲击让你能够做到的一件事。
+
+\end{frame}
+
+\begin{frame}{把 $T$ 取得足够大}
+
+\begin{itemize}
+  \item $T$ = $\bar K$ 与 $V$ 已收敛到冲击后稳态的时间跨度，使得 $V_{T+1} \approx V^{\mathrm{post}}_{\mathrm{ss}}$。
+  \item 太小 $\to$ 终端条件会污染整条路径。
+\end{itemize}
+
+\vspace{0.4em}
+
+\textbf{经验法则。} 取使得 $|\bar K_T - \bar K^{\mathrm{post}}_{\mathrm{ss}}| < 10^{-3}$ 的 $T$。我们使用 $T = 200$。
+
+\end{frame}
+
+\end{document}

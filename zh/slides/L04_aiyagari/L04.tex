@@ -1,0 +1,235 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+\usepackage{fontspec}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+% DejaVu Sans Mono (not Latin Modern Mono) for the monospace face because
+% LM Mono lacks Greek glyphs — β/γ inside lstlisting and \texttt{} would be
+% silently dropped otherwise.
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+\title{第四讲：均衡——Aiyagari}
+\subtitle{异质性主体宏观经济学的计算方法}
+\author{孙振越 (Jeffrey Sun)}
+\institute{多伦多大学}
+\date{2026年5月14日}
+
+\begin{document}
+
+\maketitle
+
+% =============================================================
+\section{阶段与外层循环}
+% =============================================================
+
+\begin{frame}{阶段}
+  \begin{itemize}
+    \item 异质性主体宏观模型由\textbf{阶段}与\textbf{外层循环}组合而成。
+    \item \textbf{阶段}是基本的构建模块。它们定义家庭问题，而这正是\textbf{困难所在}。
+    \item 由于\textbf{阶段}在概念上是\textbf{良定义的}、\textbf{模块化的}、且\textbf{可组合的}，复杂的宏观模型只需通过组合\textbf{阶段}即可构建。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{阶段求解家庭模块}
+  \begin{itemize}
+    \item 一个\textbf{阶段}定义了家庭在给定其\textbf{环境}（即\textbf{价格}与\textbf{参数}）下如何做出决策。
+    \item \textbf{阶段}组合成\textbf{家庭模块}：在给定价格与参数下的值函数与人口分布。
+    \item 由此我们得到\textbf{总量}：商品需求、资本需求、劳动供给，它们是价格、参数、市场紧张度等的\textbf{函数}。
+    \item 在某种意义上，你可以把家庭模块看作代表经济的\textbf{一侧}，有点像一条大的总需求曲线。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{为什么用阶段？}
+  \begin{itemize}
+    \item 阶段是\textbf{可组合的}：复杂模型通过组合阶段来构建。
+    \item 阶段具有\textbf{精确的数学定义}：模型可以被定义和求解，而无需操心实现细节。
+    \item 阶段是\textbf{标准化的}：存在可下载并复用的优化实现（例如 \texttt{HouseholdStages.jl}、SSJ Toolkit 或 ECON-ARK）。
+  \end{itemize}
+
+\end{frame}
+
+\begin{frame}{家庭模块如何嵌入其中}
+  \textbf{家庭模块}（使用\textbf{阶段}来定义和求解）是模型的一个组成部分。
+
+  你可以把模型的其余部分看作由以下两部分构成：
+  \begin{itemize}
+    \item 一组描述经济其余部分的方程组——厂商、政府等——通常被实现为函数的\textbf{有向无环图}（DAG）。
+    \item 一系列\textbf{外层循环}，用于求解均衡价格、稳态、转移路径，或带总量不确定性的全局解。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{外层循环：若干例子}
+  均衡：在价格上搜索，以\textbf{市场出清}或\textbf{超额需求}为目标。
+
+  稳态：在人口分布 $\Lambda$ 上搜索，以\textbf{人口演化} $\Lambda^\text{end} - \Lambda^{\text{start}'}$ 为目标。
+
+  校准：在参数上搜索，以\textbf{模型拟合} $\text{moment}^\text{model} - \text{moment}^\text{data}$ 为目标。
+
+  完美预见转移：在市场出清价格的\textbf{路径}上搜索，以超额需求路径为目标。
+
+  总量不确定性：在\textbf{全局值函数}上搜索，以\textbf{外层贝尔曼目标}为目标。
+\end{frame}
+
+\begin{frame}{Aiyagari 模型}
+  Aiyagari 模型包含以下三个模块：
+  \begin{enumerate}
+    \item 一个由\textbf{阶段}构成的\textbf{家庭模块}。
+    \item 一个将资本和劳动转化为商品的\textbf{厂商}。
+    \item 一个\textbf{均衡}（稳态）的概念。
+  \end{enumerate}
+
+  熟悉的经济学：
+  \begin{enumerate}
+    \item 需求侧。
+    \item 供给侧。
+    \item 均衡的概念。
+  \end{enumerate}
+\end{frame}
+
+% =============================================================
+\section{Aiyagari 家庭模块}
+% =============================================================
+
+\begin{frame}{与上次相同}
+
+  上次的三阶段家庭模块：
+  \begin{enumerate}
+    \item 收入冲击（$z$ 上的马尔可夫过程）。
+    \item 收入（手头现金 $b = R\,b^{\mathrm{end}} + z$）。
+    \item 消费—储蓄（在 $b^{\mathrm{end}}$ 上做网格搜索）。
+  \end{enumerate}
+
+  给定价格下的稳态解：
+  \begin{itemize}
+    \item VFI：值函数 $V$ 与策略 $c^\star$。
+    \item 前向模拟：平稳分布 $\lambda^\star$。
+    \item 今天：将 $R$ 设为我们需要求解的内生\emph{价格}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{在给定 $R$ 下求解家庭模块}
+  \begin{lstlisting}
+  function solve_aiyagari_steady_state(params; verbosity=1)
+      V_end = solve_vfi(params; verbosity)
+      return (;V_end, λ=find_steady_state_population(V_end, params; verbosity))
+  end
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item \texttt{params} 包含价格与参数。
+    \item 在一次函数调用中求解稳态。
+    \item 可以把它看作（除其他作用外）一个大函数 $R \mapsto \bar C - Y$（给定价格下的商品超额需求）。
+  \end{itemize}
+\end{frame}
+
+% =============================================================
+\section{总量}
+% =============================================================
+
+\begin{frame}{作为内积的总量矩}
+  每个总量矩都是一个\textbf{对偶向量}：与 $\lambda^\star$ 的内积。
+  \begin{align*}
+    \bar K &= \sum_{i,j} b_i \, \lambda^\star_{ij} \\
+    \bar L &= \sum_{i,j} z_j \, \lambda^\star_{ij}        \\
+    \bar C &= \sum_{i,j} c^\star_{ij} \, \lambda^\star_{ij} \\
+    \bar V &= \sum_{i,j} V_{ij} \, \lambda^\star_{ij}
+  \end{align*}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{compute\_household\_aggregates}}
+  \begin{lstlisting}
+  function compute_household_aggregates(;param_vals...)
+      params = get_params(;param_vals...)
+      (;V_end, λ) = solve_aiyagari_steady_state(params)
+
+      b_inds_new = policy_function(V_end, params)
+      c_policy = params.b_grid .- params.b_grid[b_inds_new]
+
+      L_agg = sum(params.z_grid' .* λ)
+      K_agg = sum(params.b_grid .* λ)
+      V_agg = sum(V_end .* λ)
+      C_agg = sum(c_policy .* λ)
+
+      return (;V_end, λ, L_agg, K_agg, V_agg, C_agg)
+  end
+  \end{lstlisting}
+\end{frame}
+
+% =============================================================
+\section{厂商}
+% =============================================================
+
+\begin{frame}[fragile]{Cobb--Douglas}
+  采用 Cobb--Douglas 生产函数的代表性厂商：
+  \[
+    Y = K^\alpha L^{1-\alpha}.
+  \]
+  这是模型的供给侧。
+
+  用代码表示，
+  \begin{lstlisting}
+  compute_Y(K, L; α=1/3) = K^α * L^(1-α)
+  \end{lstlisting}
+\end{frame}
+
+% =============================================================
+\section{均衡}
+% =============================================================
+
+\begin{frame}{商品市场出清}
+  在稳态下，
+  \[
+    \bar C \;=\; Y.
+  \]
+  定义商品的\emph{超额需求}：
+  \[
+    \text{excess\_demand}(R) = \frac{\bar C(R) - Y(R)}{Y(R)}.
+  \]
+  均衡 $R$ 是该函数的\textbf{根}：即满足 $\text{excess\_demand}(R) = 0$ 的取值。
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{compute\_excess\_demand}}
+  我们可以把这个函数写成代码，
+  \begin{lstlisting}
+  function compute_excess_demand(R)
+      (;K_agg, L_agg, C_agg) = compute_household_aggregates(;R)
+      Y_agg = compute_Y(K_agg, L_agg)
+      return excess_demand = (C_agg - Y_agg)/Y_agg
+  end
+  \end{lstlisting}
+  直接效应的链条为：
+  \[
+    R \to V \to c^\star \to \lambda^\star \to (\bar K, \bar C) \to Y.
+  \]
+\end{frame}
+
+\begin{frame}[fragile]{求解均衡 $R$}
+  \begin{lstlisting}
+  tol = 0.01
+  update_speed = 0.001
+
+  R = 1.01
+  err = Inf
+  while err > tol
+      excess_demand = compute_excess_demand(R)
+
+      R_new = R + excess_demand*update_speed
+      err = abs(excess_demand)
+
+      R = R_new
+
+      println("R=$R\t excess_demand=$excess_demand")
+  end
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item 试探调整（Tatonnement）：一种简单的梯度式更新——沿商品超额需求的方向更新 $R$。
+    \item 若 $\bar C > Y$，家庭消费过多——$\uparrow R\Rightarrow \uparrow$ 储蓄 $\Rightarrow \uparrow K, Y$。
+    \item 若 $\bar C < Y$，家庭储蓄过多——$\downarrow R\Rightarrow \downarrow$ 储蓄 $\Rightarrow \downarrow K, Y$。
+  \end{itemize}
+\end{frame}
+
+\end{document}

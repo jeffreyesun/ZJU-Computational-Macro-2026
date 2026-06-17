@@ -1,0 +1,357 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+\usepackage{fontspec}
+
+% Override Metropolis's Fira default — use Computer Modern (Latin Modern under
+% XeLaTeX) so the deck compiles deterministically without Fira installed.
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+% DejaVu Sans Mono (not Latin Modern Mono) for the monospace face because
+% LM Mono lacks Greek glyphs — β/γ inside lstlisting and \texttt{} would be
+% silently dropped otherwise.
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+\title{第一讲：引论与动态建模}
+\subtitle{异质性主体宏观经济学的计算方法}
+\author{孙振越 (Jeffrey Sun)}
+\institute{多伦多大学}
+\date{2026 年 5 月 11 日}
+
+\begin{document}
+
+\maketitle
+
+\begin{frame}{模型结构}
+  本课程幻灯片：在 Julia 中求解含或不含总量冲击的异质性主体（HA）一般均衡（GE）模型。
+
+  我们讨论具有如下形式的离散时间一般均衡模型：
+  \begin{enumerate}
+    \item 由若干\textbf{阶段}（Stages）构成的前瞻性家庭模块
+    \item 一组描述经济其余部分（如厂商、政府等）的方程，通常表示为函数的\textbf{有向无环图}（DAG）。
+    \item 一组\textbf{外层循环}，用于求解诸如均衡、稳态、校准、转移或全局解
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}{课程结构}
+  \begin{itemize}
+    \item 第 1--4 讲：阶段。
+    \item 第 5--8 讲：外层循环。
+    \begin{itemize}
+      \item 最终引出“神经值函数迭代”（nVFI）全局求解算法
+    \end{itemize}
+  \end{itemize}
+\end{frame}
+
+% =============================================================
+\section{动机}
+% =============================================================
+
+\begin{frame}{异质性主体：动机一}
+  \begin{itemize}
+    \item 经验上平均边际消费倾向（MPC）较高，而平均储蓄\textbf{也}较高
+    \item 典型的代表性主体模型难以轻易解释这一点。
+    \item 然而，若贫困家庭具有高 MPC、低储蓄，而富裕家庭具有低 MPC、高储蓄，则\textbf{异质性主体}模型便可加以解释。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{异质性主体：动机二}
+\begin{itemize}
+  \item 政策（例如利率）的变化会对不同的人产生\textbf{不同}的影响
+  \item 一项政策的\textbf{总量}效应取决于它针对的对象，因而各不相同。
+  \item 我们关心政策在分布层面和总量层面的后果。
+\end{itemize}
+
+\end{frame}
+
+% =============================================================
+\section{家庭问题：两期}
+% =============================================================
+
+\begin{frame}{微观基础：单个家庭}
+  \begin{itemize}
+    \item 宏观经济学研究的是个体行为如何塑造总量结果。
+    \item 要理解宏观结果的根源，就需要研究个体行为的来源。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{两期模型}
+  家庭在第 0 期以\textbf{财富} $b_0$ 开始。在第 1 期，家庭获得收入 $z_1$。
+  \[
+    \max_{c_0, c_1 \ge 0} \; u(c_0) + \beta u(c_1)
+  \]
+  \[
+    \text{s.t.}\quad b_0 + \frac{z_1}{R} \geq c_0 + \frac{c_1}{R}.
+  \]
+  \begin{itemize}
+    \item 若今天储蓄 \$1，明天便可花费 \$$R$，但效用被 $\beta$ 折现。
+    \item 拉格朗日函数：$\mathcal{L} = u(c_0) + \beta u(c_1) - \lambda\p{c_0 + \frac{c_1}{R} - b_0 - \frac{z_1}{R}}$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{欧拉方程}
+  拉格朗日一阶条件：
+  \begin{align*}
+    u'(c_0) &= \lambda, \\
+    \beta u'(c_1) &= \frac{\lambda}{R}.
+  \end{align*}
+  整理可得，
+  \[
+    \boxed{\frac{u'(c_0)}{u'(c_1)} = \beta R.}
+  \]
+  在最优处，对于今天多消费一单位、还是把它储蓄以换取明天的 $R$ 单位，家庭是\textbf{无差异}的。
+\end{frame}
+
+\begin{frame}{示例：对数效用下的解析解}
+  设 $u(c) = \log c$。则 $c_1 = \beta R c_0$，且
+  \[
+    c_0^\star = \frac{b_0 + \frac{z_1}{R}}{1+\beta},
+    \qquad
+    c_1^\star = \frac{\beta R \, b_0 + \frac{z_1}{R}}{1+\beta}.
+  \]
+  当 $\beta = 0.96$、$R = 1.04$、$b_0 = 10$、$z_1 = 2$ 时：
+  \[
+    c_0^\star \approx 6.08, \;\; c_1^\star \approx 6.07.
+  \]
+  这里存在\textbf{消费平滑}。收入是起伏不平的 $(10, 2)$，而消费则更为平滑，为 $(6.08, 6.07)$。
+\end{frame}
+
+\begin{frame}{策略函数}
+  \textbf{策略函数}将最优的第 0 期消费表示为\textbf{初始财富} $b_0$ 的函数，
+  \[
+    c_0^\star(b_0) = \frac{b_0 + z_1/R}{1+\beta}.
+  \]
+  这样，我们便得到了一个关于家庭行为、以及\textbf{家庭行为}如何产生的模型。
+\end{frame}
+
+\begin{frame}{CRRA 偏好}
+  一个标准的假设是常相对风险厌恶（CRRA）效用，
+  \[
+    u(c) = \begin{cases}
+      \frac{c^{1-\gamma}-1}{1-\gamma}, & \gamma > 0, \gamma \neq 1, \\
+      \log c, & \gamma = 1.
+    \end{cases}
+  \]
+  效用关于 $c$ \textbf{递增}，
+  \[
+    \frac{\partial u(c)}{\partial c} = c^{-\gamma} > 0.
+  \]
+  效用是\textbf{凹}的：边际效用关于 $c$ \textbf{递减}，
+  \[
+    \frac{\partial^2 u(c)}{\partial c^2} = -\gamma c^{-\gamma-1} < 0.
+  \]
+\end{frame}
+
+\section{家庭问题：$T$ 期}
+
+\begin{frame}{$T$ 期模型}
+  终身效用由下式给出，
+  \[
+    \max_{c_0, \ldots, c_{T-1}} \sum_{t=0}^{T-1} \beta^t u(c_t),
+    \quad b_{t+1} = R(b_t - c_t) + z_{t+1}.
+  \]
+  求解拉格朗日函数可得 $T-1$ 个欧拉方程，
+  \[
+    u'(c_t) = \beta R \, u'(c_{t+1}).
+  \]
+  如果未来收入被完全预见，仍然可以相当容易地求解。
+
+  但如果收入是随机的呢？
+\end{frame}
+
+\begin{frame}{随机收入}
+  \begin{itemize}
+    \item 假设 $\{z_t\}$ 服从转移矩阵为 $\Pi$ 的马尔可夫链
+    \item 给定今天的 $z_t$，我们知道 $z_{t+1}$ 的\emph{条件分布}，但不知道其实现值
+    \item 在每一期 $t$，家庭在不知道 $z_{t+1}$ 的情况下选择 $c_t$
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{随机欧拉方程}
+  当 $T = 2$ 时，我们可以代入，
+  \[
+    c_1 = R(b_0 - c_0) + z_1.
+  \]
+  于是问题就是，
+  \[
+    \max_{c_0} u(c_0) + \beta \E\left[\, u\left(R(b_0 - c_0) + z_1\right) \right],
+  \]
+  关于 $c_0$ 的一阶条件为，
+  \[
+    \boxed{\;u'(c_0) = \beta R \, \E\left[ u'(c_1) \right].}
+  \]
+  现在欧拉方程中包含了对\emph{不确定}的 $c_1$ 取期望。
+\end{frame}
+
+\begin{frame}{无限期问题（$T = \infty$）}
+  说来或许令人意外，如果我们取 $T\to\infty$，问题实际上反而稍微简单一些：
+  \begin{align*}
+    \max \E_0 & \ \sum_{t=0}^{\infty} \beta^t u(c_t)\\
+    \text{s.t.}\quad b_{t+1} &= R(b_t - c_t) + z_{t+1}.
+  \end{align*}
+  但我们是在对什么取 $\max$ 呢？严格来说，我们需要找到一整个序列的\textbf{策略函数}，
+  \[
+    c_t = c_t(z_0, \ldots, z_t) \quad \forall t,
+  \]
+  但这看起来几乎是不可能的。所幸，我们可以通过重新表述问题来加以简化。
+
+  （注：此处略去横截性条件的问题。）
+\end{frame}
+
+% =============================================================
+\section{递归形式}
+% =============================================================
+
+\begin{frame}{Bellman 的第一个观察}
+  在每一时刻 $t$，家庭只做出一个选择，然后等待，
+
+  \[
+    \max_{c_t} = u(c_t) + \beta \E_t\left[ \max \E_{t+1}\sum_{s=t+1}^\infty \beta^t u(c_s) \right]
+  \]
+  \[
+    s.t. \quad b_{s+1} = R(b_s - c_s) + z_{s+1} \quad\forall s \ge t.
+  \]
+
+  重要的是，时刻 $t$ 的问题与时刻 $t+1$ 的问题看起来\textbf{几乎}完全相同。
+
+  唯一可能的差异在于 $b_t$ 和 $z_t$。这些就是\textbf{状态变量}。
+\end{frame}
+
+\begin{frame}{状态变量}
+  \begin{itemize}
+    \item 非正式地说，\textbf{状态变量}就是那些使各个时期（以及各项决策）彼此之间产生实质性差异的变量。
+    \item 在这里，状态变量是财富 $b_t$ 和收入 $z_t$。给定这些变量，家庭未来的条件期望效用和最优决策便被唯一确定。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Bellman 的第二和第三个观察}
+  Bellman 还意识到另外两件事：
+  \begin{enumerate}
+    \item[2.] 可以将第一个洞见表述为一个关于\textbf{值函数} $V$ 的方程。
+    \item[3.] 如果你知道这个\textbf{值函数}，就可以计算出\textbf{策略函数}，并（在数值上）求解整个模型。
+  \end{enumerate}
+  用计算机科学的术语来说，这是\textbf{缓存}的一个例子。
+\end{frame}
+
+\begin{frame}{值函数与贝尔曼方程}
+  将\emph{值函数} $V(b, z)$ 定义为给定状态 $(b, z)$ 时未来效用的\textbf{净现值}。
+  \begin{align*}
+    V(b, z) &= \max_{c\in[0,b]} \mathbb{E}_0 \sum_{s=0}^\infty \beta^{s} u(c_s)\\
+    \text{s.t.} \quad b_{s+1} &= R(b_s - c_s) + z_{s+1}\ \forall s.
+  \end{align*}
+  $\quad$（前提是所有未来的选择也都将以最优方式做出。）
+
+  那么 $V$ 满足\textbf{贝尔曼方程}
+  \[
+    \boxed{V(b, z) = \max_{c \in [0, b]} \; u(c) + \beta \, \E\!\left[\, V(b', z') \,\big|\, z \,\right]}
+  \]
+  s.t. $b' = R(b-c) + z'$
+\end{frame}
+
+\begin{frame}{值函数就是你所需要的一切}
+  如果我们知道 $V$，就可以计算出\textbf{策略函数}，并求解整个（家庭）模型，
+  \[
+  c^\star(b, z) = \arg\max_{c \in [0, b]} u(c) + \beta \, \E\!\left[\, V(R(b-c) + z,\, z') \mid z \,\right].
+  \]
+\end{frame}
+
+\begin{frame}{我们如何找到 $V$？}
+  \begin{itemize}
+    \item 不过，我们仍然面临一个问题。我们要找的不只是一个数，而是要找到一整个\textbf{函数} $V$。
+    \item 我们可以通过“值函数迭代”（VFI）来做到这一点。
+    \item 为了理解这一点：先设想我们猜测了一个值函数，而且猜\textbf{错}了。
+  \end{itemize}
+
+\end{frame}
+
+\begin{frame}{作用于任意 $v$ 的贝尔曼算子}
+  假设我们猜测了一个\textbf{函数} $v$。即使 $v$ 可能是\textbf{错}的，它仍然会预测出某个策略，
+  \[
+    c^*(b, z; v) = \arg\max_{c \in [0, b]} u(c) + \beta \, \E\!\left[\, v(R(b-c) + z',\, z') \mid z \,\right].
+  \]
+  如果我们用 $v$ 来\textbf{向前看}，便可得到一个\textbf{不同的函数} $\mathcal{T}v$，
+  \[
+    (\mathcal{T} v)(b, z) \;:=\; \max_{c \in [0, b]} \; u(c) + \beta \, \E\!\left[\, v(R(b-c) + z',\, z') \,\big|\, z \,\right].
+  \]
+  $v$ 在某种意义上代表了对处于各种状态 $(b, z)$ 之价值的\textbf{信念}。
+
+  $\mathcal{T}v$ 则代表了你通过向前看一期来推理后得到的\textbf{更新后的信念}。
+\end{frame}
+
+\begin{frame}{贝尔曼算子}
+  \begin{itemize}
+    \item 把 $\mathcal{T}$ 看作一个把\textbf{函数}映射为\textbf{函数}的\textbf{算子}：$v \mapsto \mathcal{T}v$。
+    \item 这就是\textbf{贝尔曼算子}。
+    \item 贝尔曼方程可以改写为，
+    \[
+      \boxed{\; V \;=\; \mathcal{T} V. \;}
+    \]
+    \item 我们可以通过寻找 $\mathcal{T}$ 的\textbf{不动点}来求解家庭问题。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{存在性与唯一性}
+  我们不会证明这一点，但值得指出的是，巴拿赫不动点定理意味着，在温和的条件下，$\mathcal{T}$ 存在\textbf{唯一}的不动点 $V$。
+
+  其想法在于 $\mathcal{T}$ 是一个压缩映射：
+  \[
+    \norm{\mathcal{T} v_1 - \mathcal{T} v_2}_\infty
+      \le \beta \norm{v_1 - v_2}_\infty.
+  \]
+  巴拿赫定理意味着：
+  \begin{enumerate}
+    \item 存在唯一的不动点 $V$。
+    \item 从任意初始 $v_0$ 出发迭代 $v_{k+1} = \mathcal{T} v_k$，都将以 $\beta$ 的速率收敛到 $V$。
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}{再看一遍：贝尔曼方程}
+\[
+  \boxed{\;
+    V(\text{状态}) = \max_{\text{行动}}\ \text{收益}(\text{状态, 行动}) + \beta \, \E\!\left[\, V(\,\text{下一状态}\,) \,\big|\, \text{状态, 行动} \,\right]
+  \;}
+\]
+本课程余下的内容基本上都是这个方程的各种变体。
+\end{frame}
+
+% =============================================================
+\section{后续讲次}
+% =============================================================
+
+\begin{frame}{后续讲次}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{0.9}
+\begin{tabular}{c}
+VFI 的理论 \quad (L1) \\
+$\downarrow$ \\
+Julia 中的 VFI \quad (L2) \\
+$\downarrow$ \\
+异质性 \quad (L3) \\
+$\downarrow$ \\
+一般均衡 \quad (L4) \\
+$\downarrow$ \\
+转移动态 \quad (L5) \\
+$\downarrow$ \\
+空间与校准 \quad (L6) \\
+$\downarrow$ \\
+总量不确定性 \quad (L7) \\
+$\downarrow$ \\
+\alert{神经值函数迭代} \quad (L8)
+\end{tabular}
+\end{frame}
+
+\begin{frame}{Notebook}
+  每一讲都配有一个对应的 Jupyter notebook。
+  \begin{enumerate}
+    \item Julia 1.10+\\
+      \footnotesize\url{https://julialang.org/downloads/}
+    \item \normalsize VS Code 加 Julia 扩展。
+    \item \texttt{using Pkg; Pkg.add("IJulia")}。
+    \item Jupyter（Anaconda 或 \texttt{pip install jupyter}）。
+  \end{enumerate}
+\end{frame}
+
+\end{document}

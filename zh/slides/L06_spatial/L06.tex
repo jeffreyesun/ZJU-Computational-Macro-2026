@@ -1,0 +1,240 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+\usepackage{fontspec}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+\title{第六讲：空间异质性与校准}
+\subtitle{异质性主体宏观经济学的计算方法}
+\author{孙振越 (Jeffrey Sun)}
+\institute{多伦多大学}
+\date{2026年5月18日}
+
+\begin{document}
+
+\maketitle
+
+% =============================================================
+\section[引言]{引言：小型开放经济的空间模型}
+% =============================================================
+
+\begin{frame}{三个区位}
+  \begin{itemize}
+    \item 三个区位 $j\in\{1,2,3\}$。
+    \item 每个区位生产一种可无成本交易、完全可替代的计价品。
+    \item 每个区位有各自的\textbf{外生生产率} $A_j$：$A_1 > A_2 > A_3$。
+    \item 本地采用柯布—道格拉斯生产函数：$Y_j = A_j K_j^{\alpha} L_j^{1-\alpha}$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{家庭}
+  \begin{itemize}
+    \item 每个家庭无弹性地供给一单位劳动。
+    \item \textbf{特异性状态}：$(b, j)$，即财富 $b$ 与当前区位 $j$。
+    \item 不存在特异性收入冲击。在区位 $j$ 内，每个家庭都获得 $w_j$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{债券市场}
+  家庭以一种流动性资产进行储蓄，并以外生利率 $r$ 与世界其余地区进行交易。
+
+  这同时也锁定了资本与工资：
+  \begin{align*}
+    r + \delta &= \alpha A_j (L_j / K_j)^{1 - \alpha}\\
+    w_j &= (1 - \alpha) A_j \left( \frac{\alpha A_j}{r + \delta} \right)^{\alpha / (1 - \alpha)}.
+  \end{align*}
+\end{frame}
+
+\begin{frame}{期内阶段链}
+  \begin{enumerate}
+    \item \textbf{迁移。}
+    \begin{itemize}
+      \item 家庭对各个目的地抽取 Gumbel 偏好冲击
+      \item 选定 $j'$，支付成本 $C[j, j']$，获得舒适度加成 $\alpha_{j'}$。
+    \end{itemize}
+    \item \textbf{财富更新。} 在目的地 $j'$：$b' \gets (1 + r) b + w_{j'}$。
+    \item \textbf{消费／储蓄。} 选择下一期财富。
+  \end{enumerate}
+  以阶段记法表示的家庭模块：
+  \[
+    \text{Migration} \circ \text{WealthChange} \circ \text{ConsumptionSavings}
+  \]
+\end{frame}
+
+\begin{frame}{稳态对象}
+  给定参数后，模型应输出以下各量的\textbf{稳态}值：
+  \begin{itemize}
+    \item 各区位的人口份额 $s_j$。
+    \item 财富分布 $\Lambda(b, j)$。
+    \item 总量 $K_{\text{total}} = \sum_b b\, \Lambda(b, \cdot)$。
+    \item 值函数 $V(b, j)$。
+  \end{itemize}
+  注意：价格 $r$ 与 $\{w_j\}_j$ 在传入家庭模块之前就已被锁定。
+\end{frame}
+
+% =============================================================
+\section[MigrationStage]{MigrationStage}
+% =============================================================
+
+\begin{frame}{Gumbel（即 Logit）偏好冲击}
+  位于区位 $i$ 的每个家庭 $h$ 都从 Gumbel 分布中抽取特异性的\textbf{Gumbel 偏好冲击} $\varepsilon_{hj} \sim \text{EV1}$，对每个目的地 $j$ 各抽取一个。
+
+  在原区位 $i$，前往各目的地的收益为
+  \begin{align*}
+    u_{hij} &= u_{ij} + \eta \varepsilon_{hj},\\
+    \text{其中}\quad u_{ij} &= \alpha_j -C[i, j] + \Vend(b, j).
+  \end{align*}
+
+  家庭求解
+  \[
+    j'_h = \arg\max_j u_{ij} + \eta\varepsilon_{hj}.
+  \]
+
+  注意：$\eta$ 取值\textbf{越大}，家庭通过 $\Vend$ 对空间工资差异\textbf{越不}敏感。
+\end{frame}
+
+\begin{frame}{选择概率}
+  当 $\varepsilon_{hj} \sim \text{EV1}$ 时，有两个经典结论：
+
+  \textbf{（a）选择概率服从 logit 形式：}
+  \[
+  \Pr(j \mid i, b) = \frac{\exp(u_{ij} / \eta)}{\sum_k \exp(u_{ik} / \eta)}.
+  \]
+
+  \textbf{（b）期望值由下式给出：}
+  \[
+  \E\Big[\max_j (u_{ij} + \eta \cdot \varepsilon_{hj})\Big] = \eta \log \sum_k \exp\!\big(u_{ik} / \eta \big).
+  \]
+\end{frame}
+
+\begin{frame}{\texttt{MigrationStage} 的数学定义}
+  \textbf{$V$ 向后：}
+  \[
+  V_{\text{pre}}(b, i) = \eta \log \sum_j \exp\!\frac{- C[i,j] + \alpha_j + V_{\text{end}}(b, j)}{\eta}.
+  \]
+
+  \textbf{$\Lambda$ 向前：}
+  \[
+  \Lambda_{\text{post}}(b, j) = \sum_i \Pr(j \mid i, b)\, \Lambda_{\text{pre}}(b, i).
+  \]
+\end{frame}
+
+% =============================================================
+\section[稳态]{稳态}
+% =============================================================
+
+\begin{frame}[fragile]{内层求解}
+  库函数 \texttt{solve\_steady\_state\_given\_env!} 在给定 \texttt{env} 后，将 V 向后迭代至不动点（VFI），将 $\Lambda$ 向前迭代至收敛，然后计算各矩。
+
+  \begin{lstlisting}
+  function solve_household(hh, p; V_init=nothing, Λ_init=nothing)
+      env = make_env(hh; r=p.r, w=spatial_wage.(p.r, p.A, p))
+      (;V, Λ, moments) = solve_steady_state_given_env!(hh, env; V_init, Λ_init)
+      shares = moments.L ./ sum(moments.L)
+      return (; V, Λ, env, moments, shares)
+  end
+  \end{lstlisting}
+\end{frame}
+
+% =============================================================
+\section[$\alpha$ 校准]{$\alpha$ 的校准}
+% =============================================================
+
+\begin{frame}{外层循环：间接推断}
+  这是一个例子，说明如何把通过\textbf{间接推断}进行的校准理解为围绕家庭模块的\\ \textbf{外层循环}。
+
+  \textbf{注意：}在现实中，所有参数会以联合或嵌套的方式一并校准。在本节课中，为简化起见，我们把其余所有参数都视为给定。
+\end{frame}
+
+\begin{frame}{校准 $\alpha$}
+  假设我们在数据中观测到份额
+  \[
+    s^\text{data} = (0.30, 0.30, 0.40).
+  \]
+  我们希望在模型模拟出的数据中匹配这些份额。
+
+  模型的结构意味着，每个稳态人口份额 $s_j^\text{model}$ 都随 $\alpha_j$ 递增。
+
+  因此我们的策略是：根据对数份额缺口 $\log s_j^{\text{data}} - \log s_j^{\text{model}}$ 来更新各个 $\alpha_j$。
+\end{frame}
+
+\begin{frame}{经验目标矩}
+  \textbf{经验目标矩}（人口份额）：
+  \[
+  s^{\text{data}} = (0.30,\ 0.30,\ 0.40).
+  \]
+
+  \begin{itemize}
+    \item 在数据中，有 \emph{40\%} 的家庭居住在区位 3，尽管其工资\emph{最低}。
+    \item 我们假定，人们想要居住在区位 3 的意愿中存在一个\textbf{无法解释／不可观测的部分}。
+    \item 我们将其称为 $\alpha_3$：即区位 3 的\textbf{舒适度}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{校准外层循环}
+  \begin{enumerate}
+    \item 初始化 $\alpha^{(0)} = 0$。
+    \item 在 $\alpha^{(k)}$ 处\textbf{求解家庭}。得到 $s^{\text{model}, (k)}$。
+    \item 计算缺口 $g_j = \log s_j^{\text{data}} - \log s_j^{\text{model}, (k)}$。
+    \item 若 $\| g \|_\infty < \text{tol}$，则\textbf{停止}。
+    \item 更新 $\alpha^{(k+1)} = \alpha^{(k)} + \texttt{update\_speed} \cdot \eta \cdot g$，并归一化 $\alpha_1 = 0$。
+    \item 重复。
+  \end{enumerate}
+\end{frame}
+
+% =============================================================
+\section[扩展]{扩展}
+% =============================================================
+
+\begin{frame}{当前版本}
+  \begin{enumerate}
+    \item 单一消费品。
+    \item 商品在各区位间完全可替代。
+    \item 该商品的交易无成本。
+    \item 资本自由流动（统一的 $r$）。
+  \end{enumerate}
+
+  你可以用许多方式来丰富这一设定。
+\end{frame}
+
+\begin{frame}{差异化商品（Armington）}
+  每个区位的商品都是一个\emph{独特品种}；消费者偏好多样性（CES 加总）。
+  \begin{itemize}
+    \item 贸易流来自对各品种的需求。
+    \item 各地价格 $p_j$ 各不相同；实际工资取决于本地价格指数。
+    \item 迁移对\emph{实际}工资作出反应。
+  \end{itemize}
+  这就是\textbf{Armington（1969）}的设定，它构成了许多现代贸易／空间经济学的基础。
+\end{frame}
+
+\begin{frame}{贸易成本}
+  将商品运输刻画为有成本的。\textbf{冰山成本} $\tau_{ij} \geq 1$ 意味着每运达 1 单位就必须发运 $\tau_{ij}$ 单位。
+  \begin{itemize}
+    \item 各地价格取决于距离。
+    \item 某些商品变得不可交易（$\tau \to \infty$）：如服务、住房。
+    \item 家庭消费可交易品与不可交易品的组合。
+    \item 迁移成本与贸易成本相互作用（距离更近的地区往往两者都较低）。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{要素流动受限}
+  \begin{itemize}
+    \item \textbf{资本是本地的}（例如住房）。本地资本稀缺会抬高本地租金率与房价。
+    \item \textbf{迁移成本是沉没的且很大。}工人不会迅速使工资均等化；空间工资差异得以持续。
+    \item \textbf{技能异质性。}高技能与低技能工人面临不同的迁移选择——正如现代城市经济学文献中所讨论的（Diamond 2016, Moretti 2011）。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{实现这些扩展}
+  \begin{itemize}
+    \item Armington／不可交易品：在 \texttt{env} 中加入决定价格的额外方程（外层循环／DAG）。
+    \item 自有住房：加入住房特异性状态变量（轴）以及住房买入／卖出阶段。
+    \item 技能异质性（如 Aiyagari 中）：加入特异性人力资本 $z$ 状态变量（轴）以及相应阶段。
+  \end{itemize}
+\end{frame}
+
+\end{document}

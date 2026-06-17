@@ -1,0 +1,305 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+\usepackage{fontspec}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+% DejaVu Sans Mono for the monospace face because LM Mono lacks Greek glyphs.
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+\lstset{basicstyle=\ttfamily\scriptsize}
+
+
+% TikZ for the within-period timing diagram.
+\usepackage{tikz}
+\usetikzlibrary{decorations.pathreplacing}
+
+\title{第三讲：策略、时序、人口}
+\subtitle{异质性主体宏观经济学的计算方法}
+\author{孙振越 (Jeffrey Sun)}
+\institute{多伦多大学}
+\date{May 13, 2026}
+
+\begin{document}
+
+\maketitle
+
+% =============================================================
+\section{策略函数}
+% =============================================================
+
+\begin{frame}{策略函数：$c^\star$}
+  策略函数是\textbf{最大值}贝尔曼算子所对应的\textbf{argmax}版本：
+  \begin{align*}
+    \mathcal{T}v(b)        &\;=\; \max_{c \in [0, b]} \; u(c) + \beta \, v\!\big(R(b - c) + z\big) \tag{Bellman Operator} \\[0.4em]
+    c^\star(b)  &\;=\; \arg\max_{c \in [0, b]} \; u(c) + \beta \, v\!\big(R(b - c) + z\big) \tag{Policy Function}
+  \end{align*}
+  \begin{itemize}
+    \item 一旦求得真正的 $V$，$\arg\max$ 便给出最优策略 $c^\star$。
+    \item 更深一层地说，任意 $v$ 都会给出某个策略函数。
+    \begin{itemize}
+      \item $v$ 可以理解为对处于各种状态之价值的信念的表示。
+    \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{边际消费倾向（MPC）}
+  斜率 $\partial c^\star / \partial b$ 即\textbf{边际消费倾向（MPC）}。
+
+  一般而言（无论在理论上还是经验上），越贫穷的家庭其 MPC 越高，越富裕的家庭则越低。
+
+  它可以理解为家庭受到何种程度\textbf{约束}的函数。
+\end{frame}
+
+% =============================================================
+\section{约定}
+% =============================================================
+
+\begin{frame}{约定}
+  \begin{itemize}
+    \item 既然我们已经有了一些直觉，下面来设定一些约定，它们在后面会大有用处。
+    \item 将状态变量 $z$ 理解为\textbf{人力资本}，并服从某一\textbf{马尔可夫过程 $\Pi_z$}。
+    \item 当期收入为 $zw$，其中 $w$ 为工资水平。眼下我们将其标准化为 $w = 1$。
+    \item 现在\textbf{状态}为 $(b, z)$。
+    \item 在计算机上，每个 $V$ 现在都是一个\textbf{矩阵}。行对应财富 $b$，列对应人力资本 $z$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{阶段}
+  每一个\textbf{模型特征}都可以理解为一个\textbf{阶段}：
+  \begin{enumerate}
+    \item 收入冲击
+    \item 收入
+    \item 消费—储蓄
+  \end{enumerate}
+  每个\textbf{阶段}都是一个\textbf{简单的子时期}。
+  \begin{itemize}
+    \item 这一点稍后详述，但各阶段的\textbf{函数可组合性}类似于连续时间家庭模型的\textbf{可加可组合性}。
+    \item 这使我们能够通过组合各个\textbf{阶段}来构建\textbf{复杂}的模型。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{时期内时间轴}
+  \vspace{0.4em}
+  {\centering
+  \begin{tikzpicture}[
+    every node/.style={font=\footnotesize},
+    decoration={brace, mirror, amplitude=4pt},
+    baseline,
+  ]
+    \def\W{12.4}                            % timeline width in cm
+    \pgfmathsetmacro{\seg}{\W/3}            % segment width
+
+    % main line
+    \draw[thick] (0, 0) -- (\W, 0);
+
+    % ticks
+    \foreach \i in {0, 1, 2, 3} {
+      \draw[thick] ({\i*\seg}, -0.13) -- ({\i*\seg}, 0.13);
+    }
+
+    % V expressions above each tick
+    \node[above=2pt, font=\scriptsize] at (0, 0.13)         {$V^{\mathrm{start}}(b^{\mathrm{end}}_{t-1},\, z^{\mathrm{end}}_{t-1})$};
+    \node[above=2pt, font=\scriptsize] at ({\seg}, 0.13)    {$V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}_{t-1},\, z_t)$};
+    \node[above=2pt, font=\scriptsize] at ({2*\seg}, 0.13)  {$V^{\mathrm{pre\_cons}}(b_t,\, z_t)$};
+    \node[above=2pt, font=\scriptsize] at (\W, 0.13)        {$V^{\mathrm{end}}(b^{\mathrm{end}}_t,\, z_t)$};
+
+    % "Beginning of period" annotation: a second row above tick 1
+    \node[above=14pt, font=\scriptsize\itshape, align=center] at (0, 0.13)
+      {时期开始};
+    \node[above=14pt, font=\scriptsize\itshape, align=center] at (\W, 0.13)
+      {时期结束};
+
+    % underbraces below segments
+    \draw[decorate] (0.08, -0.13) -- ({\seg - 0.08}, -0.13);
+    \draw[decorate] ({\seg + 0.08}, -0.13) -- ({2*\seg - 0.08}, -0.13);
+    \draw[decorate] ({2*\seg + 0.08}, -0.13) -- ({\W - 0.08}, -0.13);
+
+    % stage labels under each underbrace
+    \node[below=12pt, align=center] at ({\seg/2}, -0.13)
+      {\textbf{收入冲击}\\[1pt] $z_t \sim \Pi_z(\cdot \mid z^{\mathrm{end}}_{t-1})$};
+    \node[below=12pt, align=center] at ({\W/2}, -0.13)
+      {\textbf{收入}\\[1pt] $b_t = R\, b^{\mathrm{end}}_{t-1} + z_t$};
+    \node[below=12pt, align=center] at ({5*\seg/2}, -0.13)
+      {\textbf{消费—储蓄}\\[1pt] $b^{\mathrm{end}}_t = b_t - c^\star(b_t, z_t)$};
+  \end{tikzpicture}
+  }
+  每个\textbf{阶段}都有不同的\textbf{状态变量}以及不同的\textbf{中间值函数}。
+
+  我们可以逐个阶段地将 $V^\text{end}$ 向后迭代。
+\end{frame}
+
+\section{阶段}
+
+\begin{frame}{阶段 1 --- 收入冲击}
+  \begin{itemize}
+    \item $(\Pi_z)_{ij} = \Pr(z_t = j \mid z^{\mathrm{end}}_{t-1} = i)$，按行随机。
+    \item \textbf{向后}（值函数）。
+  \end{itemize}
+  \[
+    V^{\mathrm{start}} \;=\; V^{\mathrm{pre\_inc}} \, \Pi_z^\top.
+  \]
+  $V^{\mathrm{start}}$ 的每个 $(b^{\mathrm{end}}, z^{\mathrm{end}}_{t-1})$ 元素都是给定 $z^{\mathrm{end}}_{t-1}$ 时对 $z_t$ 求取的期望。
+
+  （注：关于为何矩阵乘法能够表示 $V$ 穿过马尔可夫链的向后迭代，参见马尔可夫链的标准参考文献。）
+\end{frame}
+
+\begin{frame}{阶段 2 --- 收入}
+  这一阶段仅表示收入的\textbf{获取}，
+  \[
+    b_t = R \, b^{\mathrm{end}}_{t-1} + z_t,
+  \]
+  实质上是一次变量替换。
+
+  明确地写出，向后这一步为，
+  \begin{align*}
+    V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}_{t-1}, z)
+    \; &= \; V^{\mathrm{pre\_cons}}\!\big(R\, b^{\mathrm{end}}_{t-1} + z,\; z\big).
+  \end{align*}
+
+  在示例代码中，我们通过在新点 $R\, b^{\mathrm{end}}_{t-1} + z$ 处\textbf{重新插值} $V^{\mathrm{pre\_cons}}$ 来实现这一点。
+\end{frame}
+
+\begin{frame}{阶段 3 --- 消费—储蓄}
+  这一阶段表示 argmax 这一步，
+  \[
+    b^{\mathrm{end}}_t \;=\; b_t - c^\star(b_t, z_t).
+  \]
+  明确地写出，向后这一步为，
+  \[
+    V^{\mathrm{pre\_cons}}(b, z) \;=\; \max_{b^{\mathrm{end}} \in b_{\mathrm{grid}}} u(b - b^{\mathrm{end}}) + \beta V^{\mathrm{end}}(b^{\mathrm{end}}, z).
+  \]
+
+  在这里，我们将由 $\beta$ 体现的时间贴现并入消费—储蓄阶段，但一般而言它也可以被视为一个独立的阶段。
+\end{frame}
+
+\begin{frame}[fragile]{向后迭代}
+  \begin{lstlisting}
+"将 V_end 向后迭代一整个时期。"
+function bellman_operator(V_end, params)
+    (;β) = params
+
+    # 阶段 3
+    V_post_inc = consumption_saving_backward(V_end, params)
+
+    # 阶段 2
+    V_post_inc_shock = income_backward(V_post_inc, params)
+
+    # 阶段 1
+    V_start = income_shock_backward(V_post_inc_shock, params)
+
+    # 阶段 0
+    V_end_new = β .* V_start
+
+    return V_end_new
+end
+  \end{lstlisting}
+  $V$ 的向后迭代不过是各阶段向后迭代函数的\textbf{函数复合}。
+\end{frame}
+
+% =============================================================
+\section{模拟一个人口}
+% =============================================================
+
+\begin{frame}{（几乎）免费的异质性}
+  \begin{itemize}
+    \item 此前我们一直把 $V$ 和 $c^*$ 看作单个家庭在不同\textbf{可能}状态下的价值与策略。
+    \item 但我们同样可以把 $V$ 和 $c^*$ 看作一个\textbf{人口}中处于不同特异性状态的\textbf{同期}家庭的价值与策略。
+    \item 由于我们已经在整个网格上计算出了 $V$，这使得我们能以极低的代价加入异质性。
+    \item 我们只需思考如何\textbf{表示}并\textbf{模拟}一个家庭人口。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{一个人口就是一个向量（或矩阵）}
+  我们可以把\emph{人口}表示为财富网格上的一个离散分布 $\Lambda$：
+  \[
+    \Lambda_i \;=\; \text{位于 } b_i \text{ 处的家庭份额。}
+  \]
+  也就是说，正如 $V$ 一样，它是离散化状态空间上的一个向量（或矩阵）。
+
+  （注：矩阵也是向量。）
+\end{frame}
+
+\begin{frame}{加总矩}
+  \begin{itemize}
+    \item 加总福利于是就是一个内积：$\bar{V} = \sum_i V(b_i) \, \Lambda_i$。对 $\bar{C}$、$\bar{K}$ 等同理。
+    \item 实际上，分布的\textbf{任意}矩（例如加总资本、加总消费等）都可以理解为与 $\Lambda$ 作的内积。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{三个阶段的向前与向后}
+  \footnotesize
+  \setlength{\tabcolsep}{6pt}
+  \renewcommand{\arraystretch}{1.45}
+  \begin{tabular}{@{}l l l@{}}
+  \toprule
+  & \textbf{向后}（值） & \textbf{向前}（分布） \\
+  \midrule
+  \textbf{阶段 1}    & $V^{\mathrm{start}} = V^{\mathrm{pre\_inc}}\, \Pi_z^\top$
+                      & $\Lambda^{\mathrm{post}} = \Lambda^{\mathrm{pre}}\, \Pi_z$ \\
+  \textbf{阶段 2}    & $V^{\mathrm{pre\_inc}}(b^{\mathrm{end}}, z) = V^\text{pre\_cons}(R\, b^{\mathrm{end}} + z,\, z)$
+                      & $(b^{\mathrm{end}}, z) \to (R\, b^{\mathrm{end}} + z,\, z)$ \\
+  \textbf{阶段 3}    & $V^\text{pre\_cons}(b, z) = \max\limits_{b^{\mathrm{end}}} u(b - b^{\mathrm{end}}) + V^{\mathrm{end}}(b^{\mathrm{end}}, z)$
+                      & $(b, z) \to \big(b - c^\star(b, z),\, z\big)$ \\
+  \midrule
+  \textbf{动态边界条件}   & $V^{\mathrm{end}_t} = \beta\, V^{\mathrm{start}}_{t+1}$
+                      & $\Lambda^\text{start}_t = \Lambda^\text{end}_{t+1}$ \\
+  \textbf{稳态}   & $V^{\mathrm{end}} = \beta\, V^{\mathrm{start}}$
+                      & $\Lambda^\text{start} = \Lambda^\text{end}$ \\
+  \bottomrule
+  \end{tabular}
+
+  \vspace{0.8em}
+
+  \footnotesize
+  向后：$V^{\mathrm{end}} \to V^\text{pre\_cons} \to V^{\mathrm{pre\_inc}} \to V^{\mathrm{start}}$。
+
+  向前：$\Lambda^\text{start} \to \Lambda^\text{pre\_inc} \to \Lambda^\text{pre\_cons} \to \Lambda^\text{end}$。
+\end{frame}
+
+\begin{frame}[fragile]{阶段 1：马尔可夫收入冲击}
+  向前：
+  \begin{lstlisting}
+# Λ 是一个 N_b × N_z 的矩阵：行索引财富，列索引 z 状态。
+# 沿 z 维度的马尔可夫推进只是一次矩阵乘法。
+income_shock_forward(Λ, Π_z) = Λ * Π_z
+  \end{lstlisting}
+
+  \begin{itemize}
+    \item $(b_i, z_j)$ 处的质量以权重 $(\Pi_z)_{j j'}$ 流向 $(b_i, z_{j'})$。
+    \item 沿一个维度的马尔可夫推进不过是一次矩阵乘法。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{simulate\_population\_forward}}
+  \begin{lstlisting}
+"将人口向前模拟穿过全部三个阶段：Λ → 收入冲击 → 收入 → 消费储蓄。"
+function simulate_population_forward(Λ, b_inds_new, params)
+    # 阶段 1
+    Λ = income_shock_forward(Λ, params.Π_z)
+
+    # 阶段 2
+    Λ = income_forward(Λ, params)
+
+    # 阶段 3
+    Λ = consumption_saving_forward(Λ, b_inds_new, params)
+
+    return Λ
+end
+  \end{lstlisting}
+  向前模拟不过是各阶段向前模拟函数的\textbf{函数复合}。
+\end{frame}
+
+
+\begin{frame}{求解稳态}
+  \begin{enumerate}
+    \item 猜测 $v$ 与 $\Lambda$。
+    \item 将 $v$ 向后迭代，直至收敛到 $V$。
+    \item 将 $\Lambda$ 向前模拟，直至收敛到其稳态。
+  \end{enumerate}
+  （注：$\Lambda$ 收敛所需的条件比 $V$ 的更为微妙。）
+\end{frame}
+
+\end{document}

@@ -1,0 +1,248 @@
+% !TEX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+\input{../_shared/preamble.tex}
+
+\usepackage{fontspec}
+
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+% DejaVu Sans Mono (not Latin Modern Mono) for the monospace face because
+% LM Mono lacks Greek glyphs — beta/γ inside lstlisting and \texttt{} were
+% silently dropped before this change.
+\setmonofont{DejaVu Sans Mono}[Scale=0.85]
+
+\lstset{basicstyle=\ttfamily\scriptsize}
+
+\title{第二讲：计算——Julia 与 VFI}
+\subtitle{异质性主体宏观经济学的计算方法}
+\author{孙振越 (Jeffrey Sun)}
+\institute{多伦多大学}
+\date{2026 年 5 月 12 日}
+
+\begin{document}
+
+\maketitle
+
+% =============================================================
+\section{准备工作}
+% =============================================================
+
+\begin{frame}{贝尔曼方程}
+  \[
+    \boxed{\;
+      V(b, z) \;=\; \max_{c \in [0, b]} \; u(c)
+        + \beta \, V(R(b-c) + z,\, z)\quad\forall b,z
+    \;}
+  \]
+  $b$ 是财富。$z$ 是主体的生产率（暂时设为常数）。
+
+  该方程刻画了求解家庭问题所需的函数 $V$。
+\end{frame}
+
+\begin{frame}{$V$ 唯一且可计算}
+  对于任意有界的 $v_1, v_2$，
+  \[
+    \norm{\mathcal{T} v_1 - \mathcal{T} v_2}_\infty
+      \;\le\; \beta \, \norm{v_1 - v_2}_\infty.
+  \]
+  非正式地说，巴拿赫不动点定理意味着：
+  \begin{itemize}
+    \item 存在唯一的 $V^*$ 满足 $V^* = \mathcal{T} V^*$。
+    \item 值函数迭代总能找到 $V^*$。
+  \end{itemize}
+  本讲：用有限网格替代连续状态 $b$，将 $\mathcal{T}$ 写成一个 Julia 函数，迭代至不动点，并绘制 $V$。
+\end{frame}
+
+% =============================================================
+\section{Julia}
+% =============================================================
+
+\begin{frame}[fragile]{数组}
+  \begin{lstlisting}
+  xs  = [1.0, 2.0, 3.0]      # Vector{Float64}, 长度为 3
+  M   = [1 2; 3 4]           # Matrix{Int64}, 2×2
+  zs  = zeros(3, 4)          # 3×4 的全 0.0 矩阵
+  xs[1]                      # 1.0   --- 从 1 开始索引！
+  M[2, 1]                    # 3
+  \end{lstlisting}
+  \begin{itemize}
+    \item \textbf{索引从 1 开始。}
+    \item \texttt{xs[end]} 是最后一个元素。\texttt{xs[2:3]} 是一个切片。
+    \item 数组按列优先存储：维度 1 是行，维度 2 是列。``向量''是列向量。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{广播（Broadcasting）}
+  \begin{lstlisting}
+  xs = [1.0, 2.0, 3.0]
+
+  xs .+ 10          # [11.0, 12.0, 13.0]
+  log.(xs)          # [0.0, 0.693, 1.099]
+  xs .^ 2           # [1.0, 4.0, 9.0]
+
+  # 对两个形状相同的数组逐元素运算：
+  [1,2,3] .* [10,20,30]   # [10, 40, 90]
+  \end{lstlisting}
+  点号 \texttt{.} 是``逐元素''的标记。
+
+  点号将任意函数或运算逐元素地施加，无需编写循环。
+\end{frame}
+
+\begin{frame}[fragile]{函数}
+  \begin{lstlisting}
+  function utility(c)
+      c <= 0 && return -Inf
+      return log(c)
+  end
+
+  # 简单条件判断的简写形式：
+  function utility(c)
+      return c <= 0 ? -Inf : log(c)
+  end
+
+  # 单行函数同样有效：
+  u(c) = c <= 0 ? -Inf : log(c)
+  \end{lstlisting}
+\end{frame}
+
+% =============================================================
+\section{离散化}
+% =============================================================
+
+\begin{frame}{离散财富网格}
+  \begin{itemize}
+    \item $V$ 是定义在 $[0, \infty) \times W$ 上的函数。我们无法精确地表示它。
+    \item 选取 $N$ 个财富取值 $b_1 < b_2 < \cdots < b_N$。
+    \item 将 $V$ 表示为向量 $[V(b_1), \ldots, V(b_N)]$。
+    \item 这使得该函数变为有限维。
+  \end{itemize}
+  \textbf{注：}值函数迭代的所有概念都\textbf{不依赖}于将 $V$ 表示为向量。$V$ 可以是样条、神经网络，或定义在动态网格上，这些概念仍然成立。
+\end{frame}
+
+\begin{frame}[fragile]{线性间距与对数间距}
+  \begin{lstlisting}
+  loggrid(lo, hi, N) = exp.(range(log(lo), log(hi); length=N))
+
+  # 线性：等间距
+  b_grid = collect(range(0.1, 20.0; length=200))
+
+  # 对数：在借贷约束附近更稠密
+  b_grid = loggrid(0.1, 20.0, 200)
+  \end{lstlisting}
+  策略函数在 $b$ 较小时非线性更强，因此我们采用对数间距，在较小的 $b$ 上布置更多网格点。
+\end{frame}
+
+\begin{frame}[fragile]{效用}
+  \begin{lstlisting}
+  u(c) = c <= 0 ? -Inf : log(c)
+  \end{lstlisting}
+  更一般的形式是带 $\gamma$ 的 CRRA 效用，但现在先保持简单。
+\end{frame}
+
+\begin{frame}[fragile]{将贝尔曼算子 $\mathcal{T}$ 写成 Julia 函数}
+  \begin{lstlisting}
+  function bellman_operator(V, params)
+      # 从 `params` 中解包参数
+      (; β, R, z, b_grid) = params
+
+      # 计算达到每个下期财富水平 `b_next` 所需的储蓄水平 `b_end`
+      b_end = (b_grid' .- z)./R
+
+      # 在 `b_next` 维度（维度 2，即列）上对条件效用 `u.(b_grid .- b_end) .+ β.*V'` 求最大值。
+      return maximum(u.(b_grid .- b_end) .+ β.*V'; dims=2) |> vec
+  end
+  \end{lstlisting}
+  \texttt{b\_grid} 是列向量。\texttt{b\_grid'} 是行向量。
+
+  每一行对应一个 $b$ 值；每一列对应一个 $b'$ 值。最后一行在每个 $b$ \textbf{内部}（按行）、\textbf{跨越} $b'$（按列）取 \texttt{max}。
+\end{frame}
+
+\begin{frame}{关于示例的说明}
+  笔记本中的代码\textbf{并未}经过优化，也不追求速度。它们只是用来阐释概念。
+
+  我在 HouseholdStages.jl 包中提供了快得多的实现。
+\end{frame}
+
+% =============================================================
+\section{值函数迭代}
+% =============================================================
+
+\begin{frame}{值函数迭代}
+  \begin{enumerate}
+    \item 以 $V_0 \equiv 0$ 起步（任何初始猜测都可以）。
+    \vspace{0.4em}
+    \item $V_{k+1} \leftarrow \mathcal{T} V_k$。
+    \vspace{0.4em}
+    \item 当 $\norm{V_{k+1} - V_k}_\infty < \text{tol}$ 时停止。
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{solve\_vfi}}
+  \begin{lstlisting}
+  function solve_vfi(params; rtol=1e-6, verbosity=0)
+      # 给出 V 的初始猜测
+      V = zeros(size(params.b_grid))
+
+      # 反复施加贝尔曼算子直至收敛
+      Δ = Inf
+      while Δ >= rtol
+          # 更新 V
+          TV = bellman_operator(V, params)
+
+          # 计算误差
+          Δ = maximum(abs.(TV .- V))
+
+          # 更新 V
+          V = TV
+      end
+
+      return V
+  end
+  \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{基准校准}
+  \begin{lstlisting}
+  b_grid = loggrid(0.05, 40.0, 400)
+  params = (;β=0.96, R=1.04, z=1.0, b_grid)
+
+  V = solve_vfi(params)
+  \end{lstlisting}
+  \begin{itemize}
+    \item \small $\beta R < 1$，否则 $V^*$ 为无穷大。
+    \item 网格：从 $0.05$ 到 $40$ 的 400 个对数间距点。
+    \item \texttt{params} 是一个 \texttt{NamedTuple}（具名元组）。末尾的 \texttt{b\_grid} 等价于 \texttt{b\_grid=b\_grid}。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{值函数的特征}
+  $V$ 的形状与 $u$ 的形状相似\footnote{Sheeran (2017)}，
+  \begin{itemize}
+    \item $V(b)$ 是递增的（财富越多 $\Rightarrow$ 未来消费越多）。
+    \item $V(b)$ 是凹的：增加一单位财富，对穷人的价值高于对富人的价值。
+    \item 其斜率是\textbf{财富的边际价值}：由包络定理，$V'(b) = u'(c^\star(b))$。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{策略函数 $c^\star$}
+  \[
+    c^\star(b) \;=\; \arg\max_{c \in [0, b]} \; u(c) + \beta \, V\!\big(R(b - c) + z\big).
+  \]
+  \begin{lstlisting}
+  function policy_function(V, params)
+      (; β, R, z, b_grid) = params
+
+      # 与 bellman_operator 的设置相同
+      b_end = (b_grid' .- z) ./ R
+
+      # 在 b'（列）上取 argmax —— 为每一行取出对应的列索引
+      idx = argmax(u.(b_grid .- b_end) .+ β .* V'; dims=2)
+      return vec(getindex.(idx, 2))::Vector{Int}
+  end
+  \end{lstlisting}
+  与 \texttt{bellman\_operator} 相同，只是用 \texttt{argmax} 取代了 \texttt{maximum}。
+
+  返回一个整数向量：对每个（行）$b$ 给出最优 $b'$ 的网格索引。
+\end{frame}
+
+\end{document}

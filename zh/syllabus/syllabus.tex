@@ -1,0 +1,57 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
+
+% 简体中文支持。本文档需用 XeLaTeX 编译，并已安装系统字体 Noto CJK SC。
+\usepackage{xeCJK}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+\title{延续值就是你所需要的一切：\\
+异质性主体宏观经济学的计算方法}
+\author{孙振越 (Jeffrey Sun)$^1$\footnote{多伦多大学。本课程最初在浙江大学讲授，由中国留美经济学会（CES）—邹至庄短期来华教学奖学金资助促成。}}
+\date{}
+
+\begin{document}
+\date{2026 年 5 月}
+\maketitle
+
+\vspace*{-1em}
+\section*{课程概述}
+
+我们研究求解宏观经济模型的计算方法，这些模型包含动态、异质性主体，以及关于预期的各种不同假设。本课程以互动方式进行，使用以 Julia 编程语言编写的 Jupyter 笔记本。
+
+代码引入了我编写的 HouseholdStages.jl 程序包，用于构建非常丰富的异质性主体家庭模块。
+
+我们从单个主体的简单消费—储蓄模型出发，逐步搭建到代表性主体一般均衡模型，再到异质性主体一般均衡模型。随后我们展示如何在稳态、确定性转移路径下求解这些模型，以及在存在总量不确定性时求解它们的两种方法：Krusell--Smith 方法，以及我自己提出的神经值函数迭代（nVFI）。
+
+本课程共 8 讲，每一讲都配有一套幻灯片和一个 Julia 笔记本。这些笔记本并非完全独立。对于自学者而言，理想的阅读顺序是先阅读幻灯片，再运行相应的笔记本。
+
+\section*{各讲内容}
+
+\begin{enumerate}
+  \item \textbf{引论。} 递归形式下的消费—储蓄问题。贝尔曼方程。
+
+  \item \textbf{计算。} Julia 语言。实现值函数迭代（VFI）。
+
+  \item \textbf{异质性。} 给定值函数后，将个体与人口向前模拟。
+
+  \item \textbf{均衡。} 一般均衡中的异质性主体：Aiyagari 模型。家庭阶段（Household Stage）概念与 HouseholdStages.jl 程序包。
+
+  \item \textbf{预期。} Aiyagari 模型中的转移动态。
+
+  \item \textbf{空间异质性与校准。} 带 Gumbel 迁移的空间模型。间接推断的一个实例：校准区位偏好平移参数以匹配人口。
+
+  \item \textbf{不确定性。} Krusell--Smith 模型。Krusell--Smith 方法。
+
+  \item \textbf{延续值就是你所需要的一切。} 使用神经值函数迭代求解带总量不确定性的异质性主体模型。
+\end{enumerate}
+
+\end{document}

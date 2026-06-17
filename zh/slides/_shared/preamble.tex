@@ -1,0 +1,116 @@
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+% Chinese (Simplified) support for the translated deck. xeCJK routes CJK
+% codepoints to a CJK font while leaving Latin text/math on the fontspec
+% faces set per-deck; this is lighter-touch than full `ctex`, which fights
+% beamer/metropolis's own fontspec setup. Requires XeLaTeX (already the
+% engine for these decks) and Noto CJK SC (installed system-wide).
+\usepackage{xeCJK}
+\setCJKmainfont{Noto Sans CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+% Header bar matches the rafael-sharon toronto-may-2026 reference deck:
+% miniframes navigation with subsection ticks, dark-teal section/subsection
+% bars at the top of every content frame.
+\definecolor{bg_subsec}{RGB}{43, 66, 70}
+\definecolor{bg_sec}{RGB}{51, 77, 83}
+
+\usetheme{metropolis}
+\useoutertheme[subsection=true]{miniframes}
+\setbeamercolor{subsection in head/foot}{fg=white, bg=bg_subsec}
+\setbeamercolor{section in head/foot}{fg=white, bg=bg_sec}
+
+\usepackage{appendixnumberbeamer}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+% Code listings
+\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{jl-keyword}{HTML}{8959A8}
+\definecolor{jl-string}{HTML}{718C00}
+\definecolor{jl-comment}{HTML}{8E908C}
+\lstdefinelanguage{Julia}{
+  keywords={if,else,elseif,end,for,while,function,return,using,import,
+            module,struct,abstract,type,export,begin,let,do,in,true,false,
+            const,where},
+  morecomment=[l]{\#},
+  morestring=[b]",
+  sensitive=true,
+}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  language=Julia,
+  keywordstyle=\color{jl-keyword}\bfseries,
+  stringstyle=\color{jl-string},
+  commentstyle=\color{jl-comment},
+  showstringspaces=false,
+  breaklines=true,
+  tabsize=2,
+  captionpos=b,
+  frame=single,
+  framerule=0pt,
+  backgroundcolor=\color{black!3},
+  extendedchars=true,
+  literate=
+    {β}{{$\beta$}}1 {α}{{$\alpha$}}1 {γ}{{$\gamma$}}1 {δ}{{$\delta$}}1
+    {ε}{{$\varepsilon$}}1 {ζ}{{$\zeta$}}1 {η}{{$\eta$}}1 {θ}{{$\theta$}}1
+    {κ}{{$\kappa$}}1 {λ}{{$\lambda$}}1 {μ}{{$\mu$}}1 {ν}{{$\nu$}}1
+    {ξ}{{$\xi$}}1 {π}{{$\pi$}}1 {ρ}{{$\rho$}}1 {σ}{{$\sigma$}}1
+    {τ}{{$\tau$}}1 {φ}{{$\varphi$}}1 {χ}{{$\chi$}}1 {ψ}{{$\psi$}}1
+    {ω}{{$\omega$}}1 {Λ}{{$\Lambda$}}1 {Δ}{{$\Delta$}}1 {Σ}{{$\Sigma$}}1,
+}
+
+% Common math macros (kept in sync with paper/main.tex)
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\norm}[1]{\left\| #1 \right\|}
+\newcommand{\Vstar}{V^{\star}}
+
+\newcommand{\p}[1]{\left( #1 \right)}
+\newcommand{\psq}[1]{\left[ #1 \right]}
+
+% Section page: use the long-form section name (\insertsection) instead of
+% the short-form (\insertsectionhead) so \section[short]{long} renders
+% `long` on the section-title slide and `short` in the header. Cloned
+% from metropolis's `progressbar` section page template.
+\setbeamertemplate{section page}{%
+  \centering%
+  \begin{minipage}{22em}%
+    \raggedright%
+    \usebeamercolor[fg]{section title}%
+    \usebeamerfont{section title}%
+    \insertsection\\[-1ex]%
+    \usebeamertemplate*{progress bar in section page}%
+    \par%
+    \ifx\insertsubsection\@empty\else%
+      \usebeamercolor[fg]{subsection title}%
+      \usebeamerfont{subsection title}%
+      \insertsubsection%
+    \fi%
+  \end{minipage}%
+  \par%
+  \vspace{\baselineskip}%
+}
+
+% Project-specific macros
+\newcommand{\Vstart}{V^{\mathrm{start}}}
+\newcommand{\Vend}{V^{\mathrm{end}}}
+\newcommand{\Vstarttil}{\widetilde{V}^{\mathrm{start}}}
+\newcommand{\Vendtil}{\widetilde{V}^{\mathrm{end}}}
+\newcommand{\Vstarthat}{\widehat{V}^{\mathrm{start}}}
+\newcommand{\Vendhat}{\widehat{V}^{\mathrm{end}}}
+\newcommand{\Lstart}{\Lambda^{\mathrm{start}}}
+\newcommand{\Lend}{\Lambda^{\mathrm{end}}}
+\newcommand{\xstart}{x^{\mathrm{start}}}
+\newcommand{\xend}{x^{\mathrm{end}}}
+\newcommand{\CV}{\mathcal{V}}
+\newcommand{\CL}{\mathcal{L}}
